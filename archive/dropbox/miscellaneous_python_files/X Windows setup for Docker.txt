@@ -1,0 +1,76 @@
+X Windows setup for Docker 
+
+TODO
+http://wiki.ros.org/docker/Tutorials/GUI
+
+
+Problem
+>>> plt.plot(t,y,'r')
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/pyplot.py", line 3352, in plot
+    ax = gca()
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/pyplot.py", line 969, in gca
+    return gcf().gca(**kwargs)
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/pyplot.py", line 586, in gcf
+    return figure()
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/pyplot.py", line 533, in figure
+    **kwargs)
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/backend_bases.py", line 161, in new_figure_manager
+    return cls.new_figure_manager_given_figure(num, fig)
+  File "/usr/local/lib/python3.6/dist-packages/matplotlib/backends/_backend_tk.py", line 1046, in new_figure_manager_given_figure
+    window = Tk.Tk(className="matplotlib")
+  File "/usr/lib/python3.6/tkinter/__init__.py", line 2020, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+_tkinter.TclError: no display name and no $DISPLAY environment variable
+
+Solution
+$ docker run -ti --rm -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix aimldl/python3_base_image /bin/bash
+
+user@a9c159fc45e3:~/test$ python3 fft.py 
+user@a9c159fc45e3:~/test$ 
+
+docker run: why use --rm (docker newbie)
+https://stackoverflow.com/questions/49726272/docker-run-why-use-rm-docker-newbie
+
+Better Solution
+How to launch X11
+$ docker run -ti --rm -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix -p 6000:6000 aimldl/python3_base_image /bin/bash
+
+X forwarding on Docker, https://skandhurkat.com/post/x-forwarding-on-docker/
+$ sudo apt-get -y update
+$ sudo apt-get install -qqy x11-apps
+
+How can I use matplotlib.pyplot in a docker container? https://stackoverflow.com/questions/46018102/how-can-i-use-matplotlib-pyplot-in-a-docker-container
+
+$ xauth list
+xxxx/unix:0 yyyy 5nsk3hd                                # copy this list
+$ docker run --rm -it -v "$PWD":/app -w /app \
+             --net=host -e DISPLAY \
+             -v /tmp/.X11-unix:/tmp/.X11-unix \
+             deep bash
+
+inside-container$ xauth add xxxx/unix:0 yyyy 5nsk3hd    # paste the list
+inside-container$ python test.py  
+
+
+
+Interestingly, I found quite nice and thorough solutions in ROS community. http://wiki.ros.org/docker/Tutorials/GUI
+
+For my problem, my final choice is the second way in the tutorial:
+
+docker run --rm -it \
+   --user=$(id -u) \
+   --env="DISPLAY" \
+   --workdir=/app \
+   --volume="$PWD":/app \
+   --volume="/etc/group:/etc/group:ro" \
+   --volume="/etc/passwd:/etc/passwd:ro" \
+   --volume="/etc/shadow:/etc/shadow:ro" \
+   --volume="/etc/sudoers.d:/etc/sudoers.d:ro" \
+   --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+   deepaul python test.python
+
+
+
+
