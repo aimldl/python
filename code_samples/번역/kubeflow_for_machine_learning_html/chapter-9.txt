@@ -1,0 +1,427 @@
+﻿Chapter 9. Case Study Using Multiple Tools
+In this chapter we’re going to discuss what to do if you need to use “other” tools for your particular data science pipeline. Python has a plethora of tools for handling a wide array of data formats. RStats has a large repository of advanced math functions. Scala is the default language of big data processing engines such as Apache Spark and Apache Flink. Legacy programs that would be costly to reproduce exist in any number of languages.
+A very important benefit of Kubeflow is that users no longer need to choose which language is best for their entire pipeline
+but can instead use the best language for each job (as long as the language and code are containerizable).
+We will demonstrate these concepts through a comprehensive example denoising CT scans. Low-dose CT scans allow clinicians to use the scans as a diagnostic tool by delivering a fraction of the radiation dose—however, these scans often
+suffer from an increase in white noise. CT scans come in a format known as DICOM, and we’ll use a container with a specialized library called pydicom to load and process the data into a numpy matrix.
+Several methods for denoising CT scans exist; however, they often focus on the mathematical justification, not the implementation.
+We will present an open source method that uses a singular value decomposition (SVD) to break the image into components, the “least important” of which are often the noise. We use Apache Spark with the Apache Mahout library to do a singular value decomposition. Finally, we use Python again to denoise the CT scans and visualize the results.
+
+9.1. The Denoising CT Scans Example
+Computed tomography (CT) scans are used for a wide array of medical purposes. The scans work by taking X-rays from multiple angles and forming image “slices” that can then be stacked to create a 3D image of a person’s insides. In the United States, health experts recommend a person receive no more than 100 milliSieverts (mSv) of radiation throughout their lives, which is equivalent to about 25 chest CT scans (at ~7 mSv each).
+In the late twentieth and early twenty-first century, much research was done on what are known as “low-dose” CT scans. A low-dose chest CT scan only delivers 1 to 2 mSv of radiation, but at a cost of a much noisier image, which can be harder to read. These scans are popular tools for screening for lung cancer among habitual smokers.
+The cost of this low-dose CT scan is that the resultant image is lower quality, or noisier. In the 2000s, much research was done on denoising these low-dose CT scans.  Most of the papers present methods and results only (no code). Further, the FDA restricts what methods can be used for denoising CT scans, which has led to almost all solutions being proprietary and expensive. Denoising seeks to improve image quality by removing the white noise that is often present in these low-dose CT scans.
+At the time of the writing of this book, the novel coronavirus more popularly known as COVID-19 has escalated into a global pandemic. It has been shown that chest CT scans are a more sensitive early-detection test than the reverse transcription polymerase chain reaction (RT-PCR) test, especially at early stages of infection.
+As multiple repositories of CT scans are coming online and asking AI researchers to assist in fighting the pandemic, we have sought to add a method for denoising CT scans based entirely on off-the-shelf open source components. Namely we will use Python, Apache Spark, Apache Mahout (a Spark library specializing in distributed linear algebra), and Kubeflow.
+We will not delve into the math of what we are doing here, but we strongly encourage you to consult this paper.[1]
+In this example, we will instead focus on the “how” of doing this technique with Kubeflow, and encourage readers to add their own steps at the end of this pipeline, which can then be freely shared with other researchers.
+
+9.1.1. Data Prep with Python
+CT scan images are commonly stored in the DICOM format. In this format each “slice” of the image is stored in its own file, along with some metadata about the image, such as space between pixels, and space between slices. We want to read all of these files and create a 3D tensor of the pixel values. Then we want to “flatten” that tensor into a two-dimensional matrix, on which we can then perform a singular value decomposition.
+There are several places where you can get DICOM file sets. For the paper, we retrieved some from https://coronacases.org (though downloading the
+DICOMs can be a bit tricky). Other places you can find DICOM files are CT scans from the Public Lung Image Database, a CD you may have received from the doctor if you’ve ever had a CT scan, and other places online.[2] The important thing is, we need one directory of DICOM files that comprise a single CT scan. We will assume there exists some DICOM file set comprising a single CT scan in the directory /data/dicom.
+Converting a DICOM image into a tensor is shockingly easy, if you have the right dependencies in place. We will use pydicom, which is a well-supported Python interface for working with DICOM images. Unfortunately, the pydicom Docker images do not include Grassroots DICOM (GDCM), which is required for converting the DICOM into a pixel array. Our solution to this problem was to use the pydicom Docker container as a base image, then build a compatible GDCM version. The resulting image we’ve named rawkintrevo/covid-prep-dicom. With pydicom and GDCM it’s easy to convert DICOM images into tensors; we will use a Lightweight Python Function to do the rest (see EXAMPLE 9-1).
+
+Example 9-1. Lightweight Python function converts DICOMs to tensors
+def dicom_to_matrix(input_dir: str, output_file: str) -> output_type:
+    import pydicom 
+    import numpy as np
+
+    def dicom_to_tensor(path): 
+        dicoms = [pydicom.dcmread(f"{path}/{f}") for f in listdir(path)]
+        slices = [d for d in dicoms if hasattr(d, "SliceLocation")]
+        slices = sorted(slices, key=lambda s: s.SliceLocation)
+
+        img_shape = list(slices[0].pixel_array.shape)
+        img_shape.append(len(slices))
+        img3d = np.zeros(img_shape)
+
+        for i, s in enumerate(slices):
+            img2d = s.pixel_array
+            img3d[:, :, i] = img2d
+
+        return {"img3d": img3d, "img_shape": img_shape}
+
+    m = dicom_to_tensor(f"{input_dir}")
+    np.savetxt(output_file, m['img3d'].reshape((-1,m['img_shape'][2])), delimiter=",") 
+    return None
+
+
+dicom_to_matrix_op = comp.func_to_container_op(
+        dicom_to_matrix,
+        base_image='rawkintrevo/covid-prep-dicom:0.8.0.0')
+
+
+Our imports must occur within the function (not globally).
+
+This function reads the list of “slices,” which themselves are 2D images, and stacks them into a 3D tensor.
+
+We use numpy to reshape the 3D tensor into a 2D matrix.
+
+Next, let’s consider denoising our CT scan using Apache Spark and Apache Mahout.
+
+
+9.1.2. DS-SVD with Apache Spark
+The mathematics behind distributed stochastic singular value decomposition (DS-SVD) are well beyond the scope of this book; however, we direct you to learn more in Apache Mahout: Beyond MapReduce, on the Apache Mahout website, or in the aforementioned paper.
+We seek to decompose our CT scan into a set of features, and then drop the least important features, as these are probably noise. So let’s jump into decomposing a CT scan with Apache Spark and Apache Mahout.
+A significant feature of Apache Mahout is its “R-Like” domain-specific language, which makes math code written in Scala easy to read. In EXAMPLE 9-2 we load our data into a Spark RDD, wrap that RDD in a Mahout distributed row matrix (DRM), and perform the DS-SVD on the matrix, which yields three matrices that we will then save.
+
+Example 9-2. Decomposing a CT scan with Spark and Mahout
+val pathToMatrix = "gs://covid-dicoms/s.csv" 
+
+val voxelRDD:DrmRdd[Int]  = sc.textFile(pathToMatrix)
+  .map(s => dvec( s.split(",")
+  .map(f => f.toDouble)))
+  .zipWithIndex
+  .map(o => (o._2.toInt, o._1))
+
+val voxelDRM = drmWrap(voxelRDD) 
+
+// k, p, q should all be cli parameters
+// k is rank of the output, e.g., the number of eigenfaces we want out.
+// p is oversampling parameter,
+// and q is the number of additional power iterations
+// Read https://mahout.apache.org/users/dim-reduction/ssvd.html
+val k = args(0).toInt
+val p = args(1).toInt
+val q = args(2).toInt
+
+val(drmU, drmV, s) = dssvd(voxelDRM.t, k, p, q) 
+
+val V = drmV.checkpoint().rdd.saveAsTextFile("gs://covid-dicoms/drmV")
+val U = drmU.t.checkpoint().rdd.saveAsTextFile("gs://covid-dicoms/drmU")
+
+sc.parallelize(s.toArray,1).saveAsTextFile("gs://covid-dicoms/s") 
+
+
+Load the data.
+
+Wrap the RDD in a DRM.
+
+Perform the DS-SVD.
+
+Save the output.
+
+And so in just a few lines of Scala we are able to execute an out-of-core singular value decomposition.
+
+
+9.1.3. Visualization
+There are lots of good libraries for visualization in R and Python, and we want to use one of these for visualizing our denoised DICOMs.  We also want to save our final images to somewhere more persistent than a persistent volume container (PVC), so that we can come back later to view our images.
+This phase of the pipeline will have three steps:
+
+
+Download the DRMs that resulted from the DS-SVD.
+
+
+Recombine the matrices into a DICOM, denoised by setting some of the diagonal values of the matrix s to zero.
+
+
+Render a slice of the resulting DICOM visually.
+
+
+Note
+Visualization could be easily accomplished in R or Python. We will proceed in Python, but using the oro.dicom package in R.  We have chosen Python because Google officially supports a Python API for interacting with Cloud Storage.
+
+
+9.1.3.1. Downloading DRMs
+Recall the DRM is really just a wrapper around an RDD. In the cloud storage bucket, it will be represented as a directory
+full of “parts” of the matrix.  To download these files we use the helper function shown in EXAMPLE 9-3.
+
+Example 9-3. Helper function to download a directory from GCS
+def download_folder(bucket_name = 'your-bucket-name',
+                    bucket_dir = 'your-bucket-directory/',
+                    dl_dir= "local-dir/"):
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blobs = bucket.list_blobs(prefix=bucket_dir)  # Get list of files
+    for blob in blobs:
+        filename = blob.name.replace('/', '_')
+        blob.download_to_filename(dl_dir + filename)  # Download
+At the time of writing, Mahout’s integration with Python is sparse (there is no PySpark equivalent to this code).
+Also, there are no helper functions for reading Mahout DRMs into Python NumPy arrays, so we must write another helper function to assist us with that (shown in EXAMPLE 9-4).
+
+Example 9-4. Helper function to read Mahout DRMs into NumPy matrices
+def read_mahout_drm(path):
+    data = {}
+    counter = 0
+    parts = [p for p in os.listdir(path) if "part"] 
+    for p in parts:
+        with open(f"{path}/{p}", 'r') as f:
+            lines = f.read().split("\n")
+            for l in lines[:-1]:
+                counter +=1
+                t = literal_eval(l)
+                arr = np.array([t[1][i] for i in range(len(t[1].keys()))])
+                data[t[0]] = arr
+    print(f"read {counter} lines from {path}")
+    return data
+
+
+Remember, most Mahout DRMs will be in “parts” of files, so we must iterate through the parts to reconstruct the matrix.
+
+
+
+9.1.3.2. Recomposing the matrix into denoised images
+In a singular value decomposition, the diagonal matrix of singular values are typically denoted with a sigma. In our code,
+however, we use the letter s. By convention, these values are typically ordered from most important to least important,
+and happily, this convention is followed in the Mahout implementation. To denoise the images, we simply set the last few values of the diagonals to zero. The idea is that the least important basis vectors probably represent noise which we seek to get rid of (see EXAMPLE 9-5).
+
+Example 9-5. A loop to write several images
+percs = [0.001, 0.01, 0.05, 0.1, 0.3]
+
+for p in range(len(percs)):
+    perc = percs[p]
+    diags = [diags_orig[i]
+             if i < round(len(diags) - (len(diags) * perc))
+             else 0
+             for i in range(len(diags))] 
+    recon = drmU_p5 @ np.diag(diags) @ drmV_p5.transpose() 
+    composite_img = recon.transpose().reshape((512,512,301)) 
+    a1 = plt.subplot(1,1,1)
+    plt.imshow(composite_img[:, :, 150], cmap=plt.cm.bone) 
+    plt.title(f"{perc*100}% denoised.  (k={len(diags)}, oversample=15, power_iters=2)")
+    a1.set_aspect(1.0)
+    plt.axis('off')
+    fname = f"{100-(perc*100)}%-denoised-img.png"
+    plt.savefig(f"/tmp/{fname}")
+    upload_blob(bucket_name, f"/tmp/{fname}", f"/output/{fname}") 
+
+
+Set the last p% of the singular values to equal zero.
+
+@ is the “matrix multiplication” operator.
+
+We’re presuming our original image was 512 x 512 x 301 slices, which may or may not be correct for your case.
+
+Take the 150th slice.
+
+We’ll talk about this function in the next section.
+
+Now in our bucket, we will have several images in the /output/ folder, named for what percentage of denoising they have been through.
+Our output was an image of one slice of the DICOM. Instead, we could have output several full DICOM files (one for each level of denoising) that could then be viewed in a DICOM viewer, though the full example is a bit involved and out of scope for this text.
+We encourage you to read pydicom’s documentation if you are interested in this output.
+
+
+
+9.1.4. The CT Scan Denoising Pipeline
+To create our pipeline, we will first create a manifest for our Spark job, which will specify what image to use, what secrets
+to use to mount what buckets, and a wide array of other information. Then we will create a pipeline using our containers from earlier steps and the manifest we define, which will output a PNG of one slice of the DICOM image with varying levels of noise removed.
+
+9.1.4.1. Spark operation manifest
+Spark read/wrote the files from GCS because it has issues with ReadWriteOnce (RWO) PVCs. We’ll need to download output from GCS, then upload.
+The Apache Spark operator does not like to read from ReadWriteOnce PVCs. If your
+Kubernetes is using these operators, and you can’t request ReadWriteMany (as, for example, is the case on GCP), then you
+will need to use some other storage for the original matrix which is to be decomposed.
+Most of our containers to this point have used ContainerOp.  As a Spark job may actually consist of several containers,
+we will use a more generic ResourceOp. Defining ResourceOps gives us much more power and control, but this comes at
+the cost of the pretty Python API. To define a ResourceOp we must define a manifest (see EXAMPLE 9-6) and pass that to the ResourceOp
+creation (see the next section).
+
+Example 9-6. Spark operation manifest
+container_manifest = {
+    "apiVersion": "sparkoperator.k8s.io/v1beta2",
+    "kind": "SparkApplication",
+    "metadata": {
+        "name": "spark-app", 
+        "namespace": "kubeflow"
+    },
+    "spec": {
+        "type": "Scala",
+        "mode": "cluster",
+        "image": "docker.io/rawkintrevo/covid-basis-vectors:0.2.0",
+        "imagePullPolicy": "Always",
+        "hadoopConf": { 
+            "fs.gs.project.id": "kubeflow-hacky-hacky",
+            "fs.gs.system.bucket": "covid-dicoms",
+            "fs.gs.impl" : "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
+            "google.cloud.auth.service.account.enable": "true",
+            "google.cloud.auth.service.account.json.keyfile": "/mnt/secrets/user-gcp-sa.json",
+        },
+        "mainClass": "org.rawkintrevo.covid.App",
+        "mainApplicationFile": "local:///covid-0.1-jar-with-dependencies.jar",
+        # See the Dockerfile
+        "arguments": ["245", "15", "1"],
+        "sparkVersion": "2.4.5",
+        "restartPolicy": {
+            "type": "Never"
+        },
+        "driver": {
+            "cores": 1,
+            "secrets": [ 
+                {"name": "user-gcp-sa",
+                 "path": "/mnt/secrets",
+                 "secretType": "GCPServiceAccount"
+                 }
+            ],
+
+            "coreLimit": "1200m",
+            "memory": "512m",
+            "labels": {
+                "version": "2.4.5",
+            },
+            "serviceAccount": "spark-operatoroperator-sa", # also try spark-operatoroperator-sa
+        },
+        "executor": {
+            "cores": 1,
+            "secrets": [ 
+                {"name": "user-gcp-sa",
+                 "path": "/mnt/secrets",
+                 "secretType": "GCPServiceAccount"
+                 }
+            ],
+            "instances": 4, 
+            "memory": "4084m"
+        },
+        "labels": {
+            "version": "2.4.5"
+        },
+
+    }
+}
+
+
+Name of the app: you can check on progress in the console with kubectl logs spark-app-driver.
+
+Different cloud providers use slightly different configurations here.
+
+We’re doing a decomposition on a very large matrix—you may want to give even more resources than this if you can spare them.
+
+Note
+Because we are accessing GCP, we need to base our image from gcr.io/spark-operator/spark:v2.4.5-gcs-prometheus,
+which has additional included JARs for accessing GCP (otherwise we would use gcr.io/spark-operator/spark:v2.4.5).
+
+While this is tuned for GCP, with a very minimal change in configuration, specifically around the secrets, this could easily be ported to AWS or Azure.
+If you are familiar with Kubernetes, you are probably used to seeing manifests represented as YAML files. Here we have
+created a manifest with a Python dictionary. Next we will use this dictionary in our pipeline definition to create a ResourceOp.
+
+
+9.1.4.2. The pipeline
+Finally, we have all of our necessary components. We will create a pipeline that strings them together into a repeatable operation for us.
+To review, EXAMPLE 9-7 does the following:
+
+
+Downloads CT scans from GCP to a local PVC.
+
+
+Converts the CT scans (DICOM files) into a matrix (s.csv).
+
+
+A Spark job does a distributed stochastic singular value decomposition and writes the output to GCP.
+
+
+The decomposed matrix is recomposed with some of the singular values set to zero—thus denoising the image.
+
+
+
+Example 9-7. CT scan denoising pipeline
+from kfp.gcp import use_gcp_secret
+@kfp.dsl.pipeline(
+    name="Covid DICOM Pipe v2",
+    description="Visualize Denoised CT Scans"
+)
+def covid_dicom_pipeline():
+    vop = kfp.dsl.VolumeOp(
+        name="requisition-PVC",
+        resource_name="datapvc",
+        size="20Gi", #10 Gi blows up...
+        modes=kfp.dsl.VOLUME_MODE_RWO
+    )
+    step1 = kfp.dsl.ContainerOp( 
+        name="download-dicom",
+        image="rawkintrevo/download-dicom:0.0.0.4",
+        command=["/run.sh"],
+        pvolumes={"/data": vop.volume}
+    )
+    step2 = kfp.dsl.ContainerOp( 
+        name="convert-dicoms-to-vectors",
+        image="rawkintrevo/covid-prep-dicom:0.9.5",
+        arguments=[
+            '--bucket_name', "covid-dicoms",
+        ],
+        command=["python", "/program.py"],
+        pvolumes={"/mnt/data": step1.pvolume}
+    ).apply(kfp.gcp.use_gcp_secret(secret_name='user-gcp-sa')) 
+    rop = kfp.dsl.ResourceOp( 
+        name="calculate-basis-vectors",
+        k8s_resource=container_manifest,
+        action="create",
+        success_condition="status.applicationState.state == COMPLETED"
+    ).after(step2)
+    pyviz = kfp.dsl.ContainerOp( 
+        name="visualize-slice-of-dicom",
+        image="rawkintrevo/visualize-dicom-output:0.0.11",
+        command=["python", "/program.py"],
+        arguments=[
+            '--bucket_name', "covid-dicoms",
+        ],
+    ).apply(kfp.gcp.use_gcp_secret(secret_name='user-gcp-sa')).after(rop)
+
+
+kfp.compiler.Compiler().compile(covid_dicom_pipeline,"dicom-pipeline-2.zip")
+client = kfp.Client()
+
+my_experiment = client.create_experiment(name='my-experiments')
+my_run = client.run_pipeline(my_experiment.id, 'my-run1', 'dicom-pipeline-2.zip')
+
+
+This container was not discussed, but it simply downloads images from a GCP bucket to our local PVC.
+
+Here we convert our DICOM into a matrix and upload it to a specified GCP bucket.
+
+This is the Spark job that calculates the singular value decomposition.
+
+This is where DICOM images are reconstructed.
+
+For GCP we use_gcp_secret, but similar functions exist for Azure and AWS.
+
+For illustration, Figures FIGURE 9-1 through FIGURE 9-3 are slices of the DICOM image at various levels of denoising. As we are not radiology experts, we won’t try to make any points about changes in quality or what is optimal, other than to point out that at 10% denoising we’ve probably gone too far, and at 30% we unquestionably have.
+
+
+Figure 9-1. Original slice of DICOM
+
+
+
+Figure 9-2. 1% denoised DICOM slice (left); 5% denoised DICOM slice (right)
+
+
+
+Figure 9-3. 10% denoised DICOM slice (left); .5% denoised DICOM slice (right)
+
+Again we see that while this pipeline is now hardcoded for GCP, it can with only a few lines of updates be changed to work with AWS or Azure; specifically, how we mount secrets to the container. A significant advantage of this is that we are able to safely decouple passcodes from code.
+
+Using RStats
+Our examples have all been Python- or Scala-based, but remember—a container is just an OS that is going to run a program. As such, you can use any language that can exist in a container. To use an RStats script as a pipeline step:
+
+
+Create a Docker container (probably from a preexisting images such as r-base:latest).
+
+
+Create a program that takes command-line arguments.
+
+
+Output the results to a mounted PVC or save to a cloud storage provider.
+
+
+
+
+
+
+
+9.2. Sharing the Pipeline
+A final important benefit of Kubeflow is the reproducibility of experiments.  While often underscored in academia, reproducibiltiy
+is an important concept in business settings as well. By containerizing pipeline steps, we can remove hidden dependencies
+that allow a program to only run on one device—or, to put it another way, reproducibility prevents you from developing an algorithm that only runs
+on one person’s machine.
+The pipeline we present here should run on any Kubeflow deployment.[3]
+This also allows for rapid iteration. Any reader can use this pipeline as a basis and, for instance, could create a final step where some deep learning is performed on the denoised images and the original images to compare the effects of denoising.
+
+
+9.3. Conclusion
+We have now seen how to create very maintainable pipelines by leveraging containers that have most, if not all, of the required dependencies to make our program run. This not only removes the technical debt of having to maintain a system with all of
+these dependencies, but makes the program much more transferable, and our research much more easily transferable and reproducible.
+There exists a large and exciting galaxy of Docker containers, and odds are you already have some steps Dockerized in preexisting
+containers. Being able to leverage these containers for Kubeflow Pipeline steps is certainly one of Kubeflow’s biggest
+strengths.
+
+[1] The full paper can be found  here.[2] The Radiological Society of North America hopes to publish a repository of COVID-19 CT scans soon.[3] With minor tuning for no GCE deployments.
+

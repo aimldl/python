@@ -1,0 +1,188 @@
+﻿Appendix A. Argo Executor Configurations and Trade-Offs
+Until recently, all Kubernetes implementations supported Docker APIs. The initial Argo implementation depended on them.
+With the introduction of OpenShift 4, which doesn’t support the Docker APIs, the situation changed. To support the absence of Docker APIs, Argo introduced several new executors: Docker, Kubelet, and Kubernetes APIs. The containerRuntimeExecutor config value in the Argo parameters file controls which executor is used.
+The pros and cons of each executor (based on the information here) are summarized in TABLE A-1. This table should help you pick the correct value of the Argo executor.
+
+Table A-1. Argo and Kubernetes APIs
+
+
+Executor
+Docker
+Kubelet
+Kubernetes API
+PNC
+
+
+
+
+Pros
+Supports all workflow examples. Most reliable, well tested, very scalable. Communicates with Docker daemon for heavy lifting.
+Secure. Can’t escape pod’s service account privileges. Medium scalability. Log retrieval and container polling are done against Kubelet.
+Secure. Can’t escape privileges of pod’s service account. No extra configuration.
+Secure. Can’t escape service account privileges. Artifact collection can be done from base image layer. Scalable: process polling is done over procfs, not kubelet/k8s API.
+
+
+Cons
+Least secure. Requires docker.sock of host to be mounted (often rejected by OPA).
+Additional kubelet configuration may be required. Can only save params/artifacts in volumes (e.g., emptyDir), and not the base image layer (e.g., /tmp).
+Least scalable. Log retrieval and container polling are done against k8s API server. Can only save params/artifacts in volumes (e.g., emptyDir), and not the base image layer (e.g., /tmp).
+Processes no longer run with pid 1. Artifact collection may fail for containers completing too fast. Can’t capture artifact directories from base image layer with volume mounted under it. Immature.
+
+
+Argo Config
+docker
+kubelet
+k8sapi
+pns
+
+
+
+
+
+Appendix B. Cloud-Specific Tools and Configuration
+Cloud-specific tools can accelerate your development, but they can also cause vendor lock-in.
+
+B.1. Google Cloud
+Since Kubeflow originates from Google, it is no surprise that there are some extra features available when running on Google Cloud. We’ll quickly point out how to use TPUs and Dataflow to accelerate your machine learning pipelines, and more Google-specific components are available in the Kubeflow GitHub repo.
+
+B.1.1. TPU-Accelerated Instances
+Different parts of the machine learning process can benefit from not only different numbers of machines, but also different types of machines.
+The most common example is with model serving: often lots of low-memory machines can perform reasonably well, but for model training, high-memory or TPU accelerated machines can offer greater benefits. While there is a handy built-in shorthand for using GPUs, with TPUs you need to explicitly import kfp.gcp as gcp. Once you’ve imported kfp’s gcp you can add TPU resources to any container operation in a similar way to GPUs by adding .apply(gcp.use_tpu(tpu_cores=cores, tpu_resource=version, tf_version=tf_version)) to your container operation.
+Warning
+TPU nodes are only available in certain regions. Check this Google Cloud page for a list of supported regions.
+
+
+
+B.1.2. Dataflow for TFX
+On Google Cloud you can configure Kubeflow’s TFX components to use Google’s Dataflow for distributed processing.
+To do this, you will need to specify a distributed output location (since there is not a shared persistent volume between the workers), and configure TFX to use the Dataflow runner.
+The simplest way to show this is by revisiting EXAMPLE 5-8; to use Dataflow we would change it to EXAMPLE B-1.
+
+Example B-1. Changing the pipeline to use Dataflow
+generated_output_uri = root_output_uri + kfp.dsl.EXECUTION_ID_PLACEHOLDER
+beam_pipeline_args = [
+    '--runner=DataflowRunner',
+    '--project=' + project_id,
+    '--temp_location=' + root_output_uri + '/tmp'),
+    '--region=' + gcp_region,
+    '--disk_size_gb=50', # Adjust as needed
+]
+
+records_example = tfx_csv_gen(
+    input_uri=fetch.output, # Must be on distributed storage
+    beam_pipeline_args=beam_pipeline_args,
+    output_examples_uri=generated_output_uri)
+As you can see, changing the pipeline to use Dataflow is relatively simple and opens up a larger scale of data for processing.
+While cloud-specific accelerations can be beneficial, be careful that the trade-off is worth the additional future headache if you ever need to change providers.
+
+
+
+
+Appendix C. Using Model Serving in Applications
+In CHAPTER 8 you learned different approaches for exposing model servers provided by Kubeflow. As described there, Kubeflow provides several ways of deploying trained models and providing both REST and gRPC interfaces for running model inference. However, it falls short in providing support for using these models in custom applications. Here we will present some of the approaches to building applications by leveraging model servers exposed by Kubeflow.
+When it comes to applications leveraging model inference, they can be broadly classified into two categories: real time and batch applications. In the real time/stream applications model, inference is done on data directly as it is produced or received. In this case, typically only one request is available at a time and it can be used for inferencing as it arrives. In the batch scenarios all of the data is available up front and can be used for inference either sequentially or in parallel. We will start from the streaming use case and then take a look at possible batch implementations.
+
+C.1. Building Streaming Applications Leveraging Model Serving
+The majority of today’s streaming applications leverage Apache Kafka as the data backbone of a system. The two possible options for implementing streaming applications themselves are: usage of stream processing engines and usage of stream processing libraries.
+
+C.1.1. Stream Processing Engines and Libraries
+As defined in the article “Defining the Execution Semantics of Stream Processing Engines,”[1] modern stream processing engines are based on organizing computations into blocks and leveraging cluster architectures.[2]
+Splitting computations in blocks enables execution parallelism, where different blocks run on different threads on the same machine, or on different machines. It also enables failover by moving execution blocks from failed machines to healthy ones. Additionally, checkpointing supported by modern engines further improves the reliability of cluster-based execution.
+Stream processing libraries, on the other hand, are libraries with a domain-specific language providing a set of constructs that simplify building streaming applications. Such libraries typically do not support distribution and/or clustering—this is typically left as an exercise for developers.
+Because these options sound similar, they are often used interchangeably. In reality, as Jay Kreps has outlined in his blog, stream processing engines and stream processing libraries are two very different approaches to building streaming applications and choosing one of them is a trade-off between power and simplicity. As described previously, stream processing engines provide more functionality, but require a developer to  adhere to their programming model and deployment. They also often require a steeper learning curve for mastering their functionality.  Stream processing libraries, on another hand, are typically easier to use, providing more flexibility, but require specific implementation of deployment, scalability, and load 
+balancing.
+Today’s most popular stream processing engines include the following:
+
+
+Apache Spark
+
+
+Apache Flink
+
+
+Apache Beam
+
+
+The most popular stream libraries are:
+
+
+Apache Kafka streams
+
+
+Akka streams
+
+
+All of these can be used as a platform for building streaming applications including model
+serving.[3]
+A side-by-side comparison of stream processing engines (Flink) and stream processing libraries (Kafka streams), done jointly by data Artisans (currently Vervetica) and Confluent teams, also emphasizes yet another difference between stream processing engines and libraries: enterprise ownership. Stream processing engines are typically owned and managed centrally by enterprise-wide units, while stream processing libraries are typically under the purview of individual development teams, which often makes their adoption much simpler.
+A stream processing engine is a good fit for applications that require features provided out of the box by such engines, including cluster scalability and high throughput through parallelism across a cluster, event-time semantics, checkpointing, built-in support for monitoring and management, and mixing of stream and batch processing. The drawback of using engines is that you are constrained by the programming and deployment models they provide.
+In contrast, the stream processing libraries provide a programming model that allows developers to build the applications or microservices the way that fits their precise needs and deploy them as simple standalone Java applications. But in this case they need to roll out their own scalability, high availability, and monitoring solutions (Kafka-based implementations support some of them by leveraging Kafka).
+
+
+C.1.2. Introducing Cloudflow
+In reality, most of the streaming application implementations require usage of multiple engines and libraries for building individual applications, which creates additional integration and maintenance complexities. Many of these can be alleviated by using an open source project, like Cloudflow, which allows you to quickly develop, orchestrate, and operate distributed streaming applications on Kubernetes. Cloudflow supports building streaming applications as a set of small, composable components communicating over Kafka and wired together with schema-based contracts. This approach can significantly improve reuse and allows you to dramatically accelerate streaming application development. At the time of this writing, such components can be implemented using Akka Streams; Flink and Spark streaming with Kafka Streams support is coming soon. The overall architecture of Cloudflow is presented in FIGURE C-1.
+
+
+Figure C-1. Cloudflow architecture
+
+In the heart of Cloudflow is a Cloudflow operator, which is responsible for deploying/undeploying, management, and scaling of pipelines and individual streamlets. The operator also leverages existing Flink and Spark operators to manage Flink and Spark streamlets. A set of provided Helm charts allows for simple installation of the operator and supporting components.
+A common challenge when building streaming applications is wiring all of the components together and testing them end-to-end before going into production. Cloudflow addresses this by allowing you to validate the connections between components and to run your application locally during development to avoid surprises during deployment.
+Everything in Cloudflow is done in the context of an application, which represents a self-contained distributed system (graph) of data processing services connected together by data streams over Kafka.
+Cloudflow supports:
+
+Development
+
+By generating a lot of boilerplate code, it allows developers to focus on business logic.
+
+Build
+
+It provides all the tooling for going from business logic to a deployable Docker image.
+
+Deploy
+
+It provides Kubernetes tooling to deploy your distributed application with a single command.
+
+Operate
+
+It provides all the tools you need to get insights, observability, and life cycle management for your distributed streaming application. Another important operational concern directly supported by Cloudflow is an ability to scale individual components of the stream.
+
+
+When using Cloudflow for implementing streaming applications, model server invocation is typically implemented by a separate streamlet[4] based on a dynamically controlled stream pattern.
+In FIGURE C-2 an implementation contains a state, where a state is a URL to the model serving server, in the case when a model server is used for inference.[5] The actual data processing in this case is done by invoking a model server to get an inference result. This call can be done using either REST or gRPC (or any other interface supported by the model server).
+
+
+Figure C-2. Dynamically controlled stream pattern
+
+This state can be updated through an additional Kafka topic, which allows for switching the URL (in the case when model server deployment is moved) without redeployment of the applications. The state is used by a data processor for processing incoming data.
+Additional streamlets (with the same architecture) can be introduced into the application to get model serving insights, such as explanation and drift detection (see SECTION 8.2 for more details).
+
+
+
+C.2. Building Batch Applications Leveraging Model Serving
+A typical batch application is implemented by reading a dataset containing all the samples and then processing them, invoking the model server for every one of them. The simplest batch application implementation is doing this sequentially, one data element at a time. Although such implementation will work, it is not very performant, due to the network overhead for processing every element.
+One popular way to speed up processing is to use batching. TFServing, for example, supports two batching approaches: server-side batching and client-side batching.
+Server-side batching is supported out of the box by TFServing.[6] To enable batching, set --enable_batching and --batching_parameters_file flags. To achieve the best trade-offs between latency and throughput, pick appropriate batching parameters.[7] Some of the recommendations for the parameters values for both CPU and GPU usage can be found in this TFServing GitHub repo.
+Upon reaching full batch on the server side, inference requests are merged internally into a single large request (tensor) and a Tensorflow Session is run on the merged request. You need to use asynchronous client requests to populate server-side batches. Running a batch of requests on a single session is where CPU/GPU parallelism can really be leveraged.
+Client-side batching is just grouping multiple inputs together on the client to make a single request.
+Although batching can significantly improve performance of the batch inference, it’s often not sufficient for reaching performance goals. Another popular approach for performance improvement is multithreading.[8]
+The idea behind this approach is to deploy multiple instances of a model server, split data processing into multiple threads, and allow each thread to do inference for part of the data it is responsible for.
+One of the ways to implement multithreading is through a batch implementation via streaming. This can be done by implementing software component[9] reading source data and writing each record to Kafka for processing. This approach effectively turns batch processing into a streaming one to allow for better scalability through an architecture as shown in FIGURE C-3.
+
+
+Figure C-3. Using stream processing for batch serving implementation
+
+This deployment includes three layers:
+
+
+Cloudflow-based stream processing that invokes model serving for every element of the stream. Every streamlet of this solution can be scaled appropriately to provide required throughput.
+
+
+A model server that does the actual model inference. This layer can be independently scaled by changing the amount of model servers.
+
+
+Load balancers, for example Istio or Ambassador, that provide load balancing for inference REST/gRPC requests.
+
+
+Because every layer in this architecture can scale independently, such an architecture can provide a model serving solution that is quite scalable for both streaming and batch use cases.
+
+[1] L. Affetti et al., “Defining the Execution Semantics of Stream Processing Engines,” Journal of Big Data 4 (2017), https://oreil.ly/TcI39.[2] Compare to MapReduce architecture.[3] For implementation details, see the report, Serving Machine Learning Models, and Kai Waehner’s project on GitHub.[4] Some of the examples of such implementations for TFServing integration can be found in this GitHub repo, and for Seldon integration, in this GitHub repo.[5] In the case of embedded model usage, the state is a model itself.[6] See this TFServing document for more details.[7] For the complete definitions of available parameters, see this TFServing GitHub repo.[8] Compare to the MapReduce programming model.[9] Streamlet, in the case of Cloudflow-based implementation.

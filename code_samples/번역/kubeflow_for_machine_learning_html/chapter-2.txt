@@ -1,0 +1,320 @@
+﻿Chapter 2. Hello Kubeflow
+Welcome to your first steps into the exciting world of Kubeflow!
+First off, we’ll set up Kubeflow on your machine, or on a cloud provider.
+Then we’ll dive into a comprehensive example.
+The goal of this example is to get a model trained and start serving as quickly as possible.
+In some parts of the first section, it may seem like we are instructing you to mindlessly enter commands. While we want
+you to follow along, we strongly encourage you to revisit this chapter after you’ve finished the book to reflect on the
+commands you entered, and consider how much your understanding has grown while reading.
+We’ll provide instructions for setting up and testing our example on a local machine and a link to instructions for performing the same on real clusters.
+While we will point you to the config files and OCI containers that are driving all of this, they are not the focus of
+this chapter; they will be covered in detail in subsequent chapters. The focus of this chapter is an end-to-end example that you can follow along with at home.
+In future chapters we will dig into the “why” of everything we’re doing, we promise.
+For now, just enjoy the ride.
+
+2.1. Getting Set Up with Kubeflow
+One of the great things about Kubeflow being built with Kubernetes is the ability to do our initial development and exploration locally, moving into more powerful and distributed tools later on. Your same pipeline can be developed locally and moved into a cluster.
+Tip
+Though you could get started with Kubeflow locally, you don’t have to. You can just as easily do your initial work with
+one of the cloud providers or on-premises Kubernetes clusters.
+One of the faster ways to get started with Kubeflow is using the click-to-deploy app on Google Cloud Platform (GCP).
+If you’re in a rush to get started, go ahead and check out this Kubeflow documentation page.
+
+
+2.1.1. Installing Kubeflow and Its Dependencies
+Before we approach the biggest requirement for Kubeflow, access to a Kubernetes cluster, let’s get the tools set up.
+Kubeflow is fairly self-contained but does require kubectl.
+The rest of the dependencies are inside containers, so you don’t have to worry about installing them.
+Tip
+Whether you use a local or a remote Kubernetes cluster, having the development tools installed locally will simplify your life.
+
+Regardless of your cluster, you need to install Kubeflow’s core dependency kubectl, for communicating with Kubernetes.
+kubectl is widely packaged, with the different installation options covered in the Kubernetes documentation.
+If you want to use a package manager to install kubectl, Ubuntu users can use snap (see EXAMPLE 2-1) and Mac users can use Homebrew (see EXAMPLE 2-2); other installation options are covered in the Kubernetes documentation. kubectl can also be installed as a local binary from this Kubernetes documentation page.
+
+Example 2-1. Install kubectl with snap
+sudo snap install kubectl --classic
+
+Example 2-2. Install kubectl with Homebrew
+brew install kubernetes-cli
+Once you have the minimum dependencies installed, you can now install Kubeflow from this GitHub repo, as in EXAMPLE 2-3.
+
+Example 2-3. Install Kubeflow
+PLATFORM=$(uname) # Either Linux or Darwin
+export PLATFORM
+mkdir -p ~/bin
+#Configuration
+export KUBEFLOW_TAG=1.0.1
+# ^ You can also point this to a different version if you want to try
+KUBEFLOW_BASE="https://api.github.com/repos/kubeflow/kfctl/releases"
+# Or just go to https://github.com/kubeflow/kfctl/releases
+KFCTL_URL=$(curl -s ${KUBEFLOW_BASE} |\
+	      grep http |\
+	      grep "${KUBEFLOW_TAG}" |\
+	      grep -i "${PLATFORM}" |\
+	      cut -d : -f 2,3 |\
+	      tr -d '\" ' )
+wget "${KFCTL_URL}"
+KFCTL_FILE=${KFCTL_URL##*/}
+tar -xvf "${KFCTL_FILE}"
+mv ./kfctl ~/bin/
+rm "${KFCTL_FILE}"
+# It's recommended that you add the scripts directory to your path
+export PATH=$PATH:~/bin
+You should now have Kubeflow installed on your machine.
+To make sure it’s installed, run kfctl version and check that it returns the expected version.
+Now let’s cover some optional tools that you can install to ease your future Kubeflowing.
+
+
+2.1.2. Setting Up Local Kubernetes
+Being able to have the same software running locally and in production is one of the great advantages of Kubeflow.
+To support this, you will need a local version of Kubernetes installed.
+While there are several options, we find Minikube the simplest.
+Minikube is a local version of Kubernetes that allows you to use your local computer to simulate a cluster.
+Two other common options for a local version of Kubeflow are microk8s, supported on many Linux platforms, and MiniKF, which uses Vagrant to launch a VM to run Kubernetes with Kubeflow.
+Tip
+A local Kubernetes cluster is not strictly required, but many data scientists and developers find it helpful to have a local cluster to test with.
+
+
+2.1.2.1. Minikube
+Minikube is a local version of Kubernetes that can run Kubeflow. There are installation guides for Minikube on the main Kubernetes documentation page as well as the Kubeflow-specific page.
+The most common failure in the automatic setup of Minikube is missing a hypervisor or Docker. Regardless of your OS, you should be able to use VirtualBox; however, other options like KVM2 on Linux, Hyper-V on Windows, and HyperKit on macOS all work as well.
+Tip
+When starting Minikube make sure to give it plenty of memory and disk space, e.g., minikube start --cpus 16 --memory 12g --disk-size 15g. Note: you don’t need 16 CPU cores to run this; this is just the number of virtual CPUs Minikube will use.
+
+
+
+
+2.1.3. Setting Up Your Kubeflow Development Environment
+Kubeflow’s pipeline system is built in Python, and having the SDK installed locally will allow you to build pipelines faster.
+However, if you can’t install software locally, you can still use Kubeflow’s Jupyter environment to build your pipelines.
+
+2.1.3.1. Setting up the Pipeline SDK
+To begin setting up the Pipeline SDK you will need to have Python installed.
+Many people find it useful to create isolated virtual environments for their different projects; see how in EXAMPLE 2-4.
+
+Example 2-4. Create a virtual environment
+virtualenv kfvenv --python python3
+source kfvenv/bin/activate
+Now you can use the pip command to install the Kubeflow Pipelines package and its requirements, as in EXAMPLE 2-5.
+
+Example 2-5. Install Kubeflow Pipeline SDK
+URL=https://storage.googleapis.com/ml-pipeline/release/latest/kfp.tar.gz
+pip install "${URL}" --upgrade
+If you use a virtual environment you will need to activate it whenever you want to use the Pipeline SDK.
+In addition to the SDK, Kubeflow ships a number of components. Checking out a fixed version of the standard components, as in EXAMPLE 2-6, allows us to create more reliable pipelines.
+
+Example 2-6. Clone the Kubeflow Pipelines repo
+  git clone --single-branch --branch 0.3.0 https://github.com/kubeflow/pipelines.git
+
+
+2.1.3.2. Setting up Docker
+Docker is an important part of the minimum requirements, allowing you to customize
+and add libraries and other functionality to your own custom containers. We’ll cover more on Docker in CHAPTER 3. Docker can be installed from the standard package managers in Linux or with Homebrew on macOS.
+In addition to installing Docker, you will want a place to store the container images, called a container registry.
+The container registry will be accessed by your Kubeflow cluster. The company behind Docker offers
+Docker Hub and RedHat offers Quay, a cloud neutral platform you can use.
+Alternatively, you can also use your cloud provider’s container registry.[1]
+A cloud vendor’s specific container registry often offers greater security on images stored there and can configure your Kubernetes cluster automatically with the permissions required to fetch those images. In our examples, we’ll assume that you’ve set your container registry
+via an environment variable 
+$CONTAINER_REGISTRY, in your shell.
+Tip
+If you use a registry that isn’t on the Google Cloud Platform, you will need to configure Kubeflow Pipelines container builder to have access to your registry by following the Kaniko configuration guide.
+
+To make sure your Docker installation is properly configured, you can write a one-line Dc and push it to your
+registry. For the Dockerfile we’ll use the FROM command to indicate we are based on top of Kubeflow’s TensorFlow
+notebook container image, as in EXAMPLE 2-7 (we’ll talk more about this in CHAPTER 9). When you push a container, you need to specify the tag, which determines the image name, version, and where it is stored—as shown in EXAMPLE 2-8.
+
+Example 2-7. Specify the new container is built on top of Kubeflow’s container
+FROM gcr.io/kubeflow-images-public/tensorflow-2.1.0-notebook-cpu:1.0.0
+
+Example 2-8. Build the new container and push to a registry for use
+IMAGE="${CONTAINER_REGISTRY}/kubeflow/test:v1"
+docker build  -t "${IMAGE}" -f Dockerfile .
+docker push "${IMAGE}"
+With this setup, you’re now ready to start customizing the containers and components in Kubeflow to meet your needs.
+We’ll do a deeper dive into building containers from scratch in CHAPTER 9. As we move forward in future chapters we’ll use this pattern to add tools when needed.
+
+
+2.1.3.3. Editing YAML
+While Kubeflow abstracts the details of Kubernetes away from us to a large degree, there are still times when looking at
+or modifying the configuration is useful. Most of Kubernetes configuration is represented in YAML, so having tools set up
+to easily look at and edit YAMLs will be beneficial. Most integrated development environments (IDEs) offer some sort of tooling for editing YAML, but you may have to install these separately.
+Tip
+For IntelliJ there is a YAML plugin.
+For emacs there are many modes available for YAML editing, including yaml-mode (which is installable from Milkypostman’s Emacs Lisp Package Archive (MELPA)).
+Atom has syntax highlighting available as a package YAML.
+If you use a different IDE, don’t throw it away just for better YAML editing before you explore the plugin available.
+Regardless of IDE you can also use the YAMLlint website to check your YAML.
+
+
+
+
+2.1.4. Creating Our First Kubeflow Project
+First, we need to make a Kubeflow project to work in.
+To create a Kubeflow deployment we use the kfctl program.[2]
+When using Kubeflow you need to specify a manifest file that configures what is built and how there are various manifests for different cloud providers.
+We’ll start with an example project using a vanilla configuration, as seen in EXAMPLE 2-9. In this project we’ll build a simple end-to-end pipeline for our MNIST example. We chose this example because it’s the standard “hello world” of machine learning.
+
+Example 2-9. Create first example project
+# Pick the correct config file for your platform from
+# https://github.com/kubeflow/manifests/tree/[version]/kfdef
+# You can download and edit the configuration at this point if you need to.
+# For generic Kubernetes with Istio:
+MANIFEST_BRANCH=${MANIFEST_BRANCH:-v1.0-branch}
+export MANIFEST_BRANCH
+MANIFEST_VERSION=${MANIFEST_VERSION:-v1.0.1}
+export MANIFEST_VERSION
+
+KF_PROJECT_NAME=${KF_PROJECT_NAME:-hello-kf-${PLATFORM}}
+export KF_PROJECT_NAME
+mkdir "${KF_PROJECT_NAME}"
+pushd "${KF_PROJECT_NAME}"
+
+manifest_root=https://raw.githubusercontent.com/kubeflow/manifests/
+# On most environments this will create a "vanilla" Kubeflow install using Istio.
+FILE_NAME=kfctl_k8s_istio.${MANIFEST_VERSION}.yaml
+KFDEF=${manifest_root}${MANIFEST_BRANCH}/kfdef/${FILE_NAME}
+kfctl apply -f $KFDEF -V
+echo $?
+
+popd
+EXAMPLE 2-9 assumes you’re using an existing Kubernetes cluster (like local Minikube).
+While your running kfctl apply you will see lots of status messages and maybe even some error messages. Provided it prints out a 0 at the end you can safely ignore most errors as they are automatically retried.
+Warning
+This deployment process can take up to 30 minutes.
+
+If you’ve decided to go straight ahead with a cloud provider, the Kubeflow installation guide has information on how to get started.
+Warning
+The Kubeflow user interface can come up before Kubeflow is fully deployed, and accessing it then can mean you won’t have a proper namespace. To make sure Kubeflow is ready, run kubectl get pods --all-namespaces -w and wait for all of the pods to become RUNNING or COMPLETED. If you see pods being preempted, make sure you launched a cluster with enough RAM and disk space. If you can’t launch a large enough cluster locally, consider a cloud provider. (Ilan and Holden are currently working on a blog post on this topic.)
+
+
+
+
+2.2. Training and Deploying a Model
+In traditional machine learning texts, the training phase is the one that is given the most attention, with a few simple
+examples on deployment, and very little treatment of model management.
+Throughout this book, we assume that you are a data scientist who knows how to select the correct model/algorithm or work with someone who does. We focus on the deployment and model management more than traditional ML texts.
+
+2.2.1. Training and Monitoring Progress
+The next step is to train the model using a Kubeflow Pipeline.
+We will use a precreated training container[3] that downloads the training data and trains the model.
+For EXAMPLE 2-10, we have a prebuilt workflow in train_pipeline.py that trains a RandomForestClassifier in the ch2 folder on this book’s GitHub example repo.
+
+Example 2-10. Create training workflow example
+dsl-compile --py train_pipeline.py --output job.yaml
+If you run into problems here, you should check out the Kubeflow troubleshooting guide.
+The Kubeflow UI, as seen in FIGURE 2-1, is accessed in a few different ways.
+For local deployments a quick port forward is the simplest way to get started: just run kubectl port-forward svc/istio-ingressgateway -n istio-system 7777:80 and then go to localhost:7777.
+If you have deployed on GCP you should go to https://<deployment_name>.endpoints.<project_name>.cloud.goog.
+Otherwise, you can get the address of the gateway service by running kubectl get ingress -n istio-system.
+
+
+Figure 2-1. Kubeflow web UI
+
+Click pipelines, or add _/pipeline/ to the root URL and you should see the Pipelines web UI, as in FIGURE 2-2.
+
+
+Figure 2-2. Pipelines web UI
+
+From here we can upload our pipeline. Once we’ve uploaded the pipeline we can use the same web UI to create a run of the pipeline. After you click the uploaded pipeline you’ll be able to create a run, as shown in FIGURE 2-3.
+
+
+Figure 2-3. Pipeline detail page
+
+
+
+2.2.2. Test Query
+Finally, let’s query our model and monitor the results. A “sanity check” is a simple test to ensure our model is making
+predictions that are theoretically reasonable. For example—we’re attempting to guess what digit
+was written. If our model comes back with answers like 77, orange Kool-Aid, or ERROR, those would all fail the sanity
+check. We expect to see digits between 0 and 9.  Sanity checking models before putting them into production is always a
+wise choice.
+The web UI and model serving are exposed through the same Istio gateway.
+So, the model will be available at http://<WEBUI_URL>/seldon<mnist-classifier/api<v0.1/predictions.
+If you’re using Google IAP, you may find the iap_curl project helpful for making requests.
+There is a Python script available for pulling an image from the MNIST dataset, turning it into a vector, displaying the image, and sending it to the model.
+Turning the image into a vector is normally part of the preprediction transformation; we’ll cover more of this in CHAPTER 8.
+EXAMPLE 2-11 is a fairly clear Python example of how one can query the model. The model returns a JSON of the 10 digits and the probability of whether the submitted vector represents a specific digit.  Specifically, we need an image of a handwritten digit that we can turn into an array of values.
+
+Example 2-11. Model query example
+import requests
+import numpy as np
+
+from tensorflow.examples.tutorials.mnist import input_data
+from matplotlib import pyplot as plt
+
+def download_mnist():
+    return input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+
+def gen_image(arr):
+    two_d = (np.reshape(arr, (28, 28)) * 255).astype(np.uint8)
+    plt.imshow(two_d, cmap=plt.cm.gray_r, interpolation='nearest')
+    return plt
+mnist = download_mnist()
+batch_xs, batch_ys = mnist.train.next_batch(1)
+chosen = 0
+gen_image(batch_xs[chosen]).show()
+data = batch_xs[chosen].reshape((1, 784))
+features = ["X" + str(i + 1) for i in range(0, 784)]
+request = {"data": {"names": features, "ndarray": data.tolist()}}
+deploymentName = "mnist-classifier"
+uri = "http://" + AMBASSADOR_API_IP + "/seldon/" + \
+    deploymentName + "/api/v0.1/predictions"
+
+response = requests.post(uri, json=request)
+For example, see the handwritten 3 in FIGURE 2-4.
+
+
+Figure 2-4. Handwritten 3
+
+This returns the following:
+{'data': {'names': ['class:0',
+		    'class:1',
+		    'class:2',
+		    'class:3',
+		    'class:4',
+		    'class:5',
+		    'class:6',
+		    'class:7',
+		    'class:8',
+		    'class:9'],
+	  'ndarray':[[0.03333333333333333,
+		      0.26666666666666666,
+		      0.03333333333333333,
+		      0.13333333333333333, ## It was actually this
+		      0.1,
+		      0.06666666666666667,
+		      0.1,
+		      0.26666666666666666,
+		      0.0,
+		      0.0]]},
+ 'meta': {'puid': 'tb02ff58vcinl82jmkkoe80u4r', 'routing': {}, 'tags': {}}}
+We can see that even though we wrote a pretty clear 3, the model’s best guess was a tie between 1 and 7. That
+being said, RandomForestClassifier is a bad model for handwriting recognition—so this isn’t a surprising result.
+We used RandomForestClassifier for two reasons: first, to illustrate model explainability in CHAPTER 8, and second, so you can experiment with a more reasonable model and compare performance.
+Note
+While we’ve deployed our end-to-end example here without any real validation, you should always validate before real production.
+
+
+
+
+2.3. Going Beyond a Local Deployment
+Some of you have been trying this out on a local Kubernetes deployment.
+One of the powers of Kubeflow is the ability to scale using Kubernetes. Kubernetes can run on a single machine or many computers, and some environments can dynamically add more resources as needed.
+While Kubernetes is an industry standard, there are variations in Kubeflow’s setup steps required depending on your provider. Kubeflow’s getting started guide has installation instructions for GCP, AWS, Azure, IBM Cloud, and OpenShift.
+Once Kubeflow is installed on your Kubernetes cluster, you can try this same example again and see how the same code can run, or take our word for it and move on to more interesting problems.
+Tip
+When deploying on cloud providers, Kubeflow can create more than just Kubernetes resources that should be deleted too. For example, on Google you can delete the ancillary services by going to the deployment manager.
+
+
+
+2.4. Conclusion
+In this chapter, you got your first real taste of Kubeflow.
+You now have your development environment properly configured and a Kubeflow deployment you can use throughout the rest of this book.
+We covered a simple end-to-end example with the standard MNIST, allowing you to see the different core components of Kubeflow in action.
+We introduced the pipeline, which ties all of Kubeflow together, and you used it to train your model.
+In CHAPTER 3 we will explore Kubeflow’s design and set up some optional components. Understanding the design will help you choose the right components.
+
+[1] Just search “cloudname” plus the container registry name for documentation.[2] Not to be confused with the legacy kfctl.sh script.[3] The container is from this GitHub repo.

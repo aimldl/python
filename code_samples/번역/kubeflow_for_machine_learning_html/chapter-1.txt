@@ -1,0 +1,408 @@
+﻿Kubeflow for Machine Learning
+
+
+Kubeflow for Machine Learning
+by Trevor  Grant, Holden  Karau, Boris  Lublinsky, Richard  Liu, and Ilan  Filonenko
+Copyright © 2021 Trevor Grant, Holden Karau, Boris Lublinsky, Richard Liu, and Ilan Filonenko. All rights reserved.
+Printed in the United States of America.
+Published by O’Reilly Media, Inc., 1005 Gravenstein Highway North, Sebastopol, CA 95472.
+O’Reilly books may be purchased for educational, business, or sales promotional use. Online editions are also available for most titles (http://oreilly.com). For more information, contact our corporate/institutional sales department: 800-998-9938 or corporate@oreilly.com.
+
+Acquisitions Editor: Jonathan Hassell
+Development Editor: Amelia Blevins
+Production Editor: Deborah Baker
+Copyeditor: JM Olejarz
+Proofreader: Justin Billing
+Indexer: Sue Klefstad
+Interior Designer: David Futato
+Cover Designer: Karen Montgomery
+Illustrator: Kate Dullea
+
+
+November 2020: First Edition
+
+
+
+Revision History for the First Edition
+
+2020-10-12: First Release
+
+
+See http://oreilly.com/catalog/errata.csp?isbn=9781492050124 for release details.
+
+The O’Reilly logo is a registered trademark of O’Reilly Media, Inc. Kubeflow for Machine Learning, the cover image, and related trade dress are trademarks of O’Reilly Media, Inc.
+The views expressed in this work are those of the authors, and do not represent the publisher’s views. While the publisher and the authors have used good faith efforts to ensure that the information and instructions contained in this work are accurate, the publisher and the authors disclaim all responsibility for errors or omissions, including without limitation responsibility for damages resulting from the use of or reliance on this work. Use of the information and instructions contained in this work is at your own risk. If any code samples or other technology this work contains or describes is subject to open source licenses or the intellectual property rights of others, it is your responsibility to ensure that your use thereof complies with such licenses and/or rights.
+
+
+978-1-492-05012-4
+[LSI]
+
+
+
+Foreword
+Occasionally over the years people will ask me what skills are most in demand in tech. Ten years ago I would tell them to study machine learning, which can scale automated decision making in ways previously impossible. However, these days I have a different answer: machine learning engineering.
+Even just a few years ago if you knew machine learning and started at an organization, you would likely walk in the door as the only person with that skill set, allowing you to have an outsized impact. However, a side effect of the proliferation of books, tutorials, e-courses, and boot camps (some of which I have written myself) teaching an entire generation of technologists the skills required is that now machine learning is being used across tens of thousands of companies and organizations.
+These days a more likely scenario is that, walking into your new job, you find an organization using machine learning locally but unable to deploy it to production or able to deploy models but unable to manage them effectively. In this setting, the most valuable skill is not being able to train a model, but rather to manage all those models and deploy them in ways that maximize their impact.
+In this volume, Trevor Grant, Holden Karau, Boris Lublinsky, Richard Liu, and Ilan Filonenko have put together what I believe is an important cornerstone in the education of data scientists and machine learning engineers. 
+
+For the foreseeable future the open source Kubeflow project will be a common tool in an organization’s toolkit for training, management, and deployment of machine learning models. This book represents the codification of a lot of knowledge that previously existed scattered around internal documentation, conference presentations, and blog posts.
+If you believe, as I do, that machine learning is only as powerful as how we use it, then this book is for you.
+Chris Albon
+Director of Machine Learning,
+The Wikimedia Foundation
+https://chrisalbon.com
+
+
+Preface
+We wrote this book for data engineers and data scientists who are building machine learning systems/models they want to move to production. If you’ve ever had the experience of training an excellent model only to ask yourself how to deploy it into production or keep it up to date once it gets there, this is the book for you.
+We hope this gives you the tools to replace Untitled_5.ipynb with something that works relatively reliably in production.
+This book is not intended to serve as your first introduction to machine learning. The next section points to some resources that may be useful if you are just getting started on your machine learning journey.
+
+Our Assumption About You
+This book assumes that you either understand how to train models locally, or are working with someone who does. If neither is true, there are many excellent introductory books on machine learning to get you started, including Hands-On Machine Learning with Scikit-Learn, Keras, and TensorFlow, 2nd Edition, by Aurélien Géron (O’Reilly).
+Our goal is to teach you how to do machine learning in a repeatable way, and how to automate the training and deployment of your models. A serious problem here is that this goal includes a wide range of topics, and it is more than reasonable that you may not be intimately familiar with all of them.
+Since we can’t delve deeply into every topic, we would like to provide you a short list of our favorite primers on several of the topics you will see covered here:
+
+Python for Data Analysis, 2nd Edition, by Wes McKinney (O’Reilly)
+Data Science from Scratch, 2nd Edition, by Joel Grus (O’Reilly)
+Introduction to Machine Learning with Python by Andreas C. Müller and Sarah Guido (O’Reilly)
+Hands-On Machine Learning with Scikit-Learn, Keras, and TensorFlow, 2nd Edition, by Aurélien Géron (O’Reilly)
+Kubernetes: Up and Running by Brendan Burns et al. (O’Reilly)
+Learning Spark by Holden Karau et al. (O’Reilly)
+Feature Engineering for Machine Learning by Alice Zheng and Amanda Casari (O’Reilly)
+Building Machine Learning Pipelines by Hannes Hapke and Catherine Nelson (O’Reilly)
+Apache Mahout: Beyond MapReduce by Dmitriy Lyubimov and Andrew Palumbo (CreateSpace)
+R Cookbook, 2nd Edition, by J. D. Long and Paul Teetor (O’Reilly)
+Serving Machine Learning Models by Boris Lublinsky (O’Reilly)
+“Continuous Delivery for Machine Learning” by Danilo Sato et al.
+Interpretable Machine Learning by Christoph Molnar (self-published)
+“A Gentle Introduction to Concept Drift in Machine Learning” by Jason Brownlee
+“Model Drift and Ensuring a Healthy Machine Learning Lifecycle” by A. Besir Kurtulmus
+“The Rise of the Model Servers” by Alex Vikati
+“An Overview of Model Explainability in Modern Machine Learning” by Rui Aguiar
+Machine Learning with Python Cookbook by Chris Albon (O’Reilly)
+Machine Learning Flashcards by Chris Albon
+
+Of course, there are many others, but those should get you started. Please don’t be overwhelmed by this list—you certainly don’t need to be an expert in each of these topics to effectively deploy and manage Kubeflow. In fact, Kubeflow exists to streamline many of these tasks. However, there may be some topic into which you wish to delve deeper—and so this should be thought of as a “getting started” list.
+Containers and Kubernetes are a wide, rapidly evolving area of practice. If you want to deepen your knowledge of Kubernetes we recommend looking at the following:
+
+Cloud Native Infrastructure by Justin Garrison and Kris Nova (O’Reilly)
+Kubernetes: Up and Running by Brendan Burns et al. (O’Reilly)
+
+
+
+Your Responsibility as a Practitioner
+This book helps you put your machine learning models into production to solve real-world problems. Solving real-world problems with machine learning is great, but as you go forth and apply your skills, remember to think about the impact.
+First, it’s important to make sure your models are sufficiently accurate, and there are great tools for this in Kubeflow, covered in SECTION 2.2. Even the best tools will not save you from all mistakes—for example, hyperparameter tuning on the same dataset to report final cross-validation results.
+Even models with significant predictive power can have unintended effects and biases that may not show up during the regular training-evaluation phase.
+Unintended biases can be hard to discover, but there are many stories (e.g., the Amazon machine learning–based recruiting engine that turned out to have intense biases and decided to hire only men) that demonstrate the profound potential implications of our work. Failing to address these issues early on can lead to having to abandon your entire work, as demonstrated by IBM’s decision to stop its facial recognition program and similar pauses across the industry after the implications of racial bias in facial recognition in the hands of law enforcement became clear.
+Even seemingly unbiased data, like raw purchase records, can turn out to have intense biases resulting in incorrect recommendations or worse.
+Just because a dataset is public and widely available does not mean it is unbiased. The well-known practice of word embeddings has been shown to have many types of bias, including sexism, anti-LGBTQ, and anti-immigrant.
+When looking at a new dataset it is crucial to look for examples of bias in your data and attempt to mitigate it as much as possible. With the most popular public datasets, various techniques are often discussed in the research, and you can use these to guide your own work.
+While this book does not have the tools to solve bias, we encourage you to think critically about potential biases in your system and explore solutions before going into production.
+If you don’t know where to start, check out Katharine Jarmul’s excellent introductory talk.
+IBM has a collection of tools and examples in its AI Fairness 360 open source toolkit that can be a great place to start your exploration.
+A critical step to reducing bias in your models is to have a diverse team to notice potential issues early.
+As Jeff Dean said: “AI is full of promise, with the potential to revolutionize so many different areas of modern society. In order to realize its true potential, our field needs to be welcoming to all people. As it stands today, it is definitely not. Our field has a problem with inclusiveness.”
+Tip
+It’s important to note that removing biases or validating accuracy in your results is not a “one and done”; model performance can degrade and biases can be introduced over time—even if you don’t personally change anything.[1]
+
+
+
+Conventions Used in This Book
+The following typographical conventions are used in this book:
+
+Italic
+
+Indicates new terms, URLs, email addresses, filenames, and file extensions.
+
+Constant width
+
+Used for program listings, as well as within paragraphs to refer to program elements such as variable or function names, databases, data types, environment variables, statements, and keywords.
+
+Constant width bold
+
+Shows commands or other text that should be typed literally by the user.
+
+Constant width italic
+
+Shows text that should be replaced with user-supplied values or by values determined by context.
+
+
+Tip
+This element signifies a tip or suggestion.
+
+Note
+This element signifies a general note.
+
+Warning
+This element indicates a warning or caution.
+
+We will use warnings to indicate any situations where the resulting pipeline is likely to be nonportable and call out portable alternatives that you can use.
+
+
+Code Examples
+Supplemental material (code examples, etc.) is available for download at https://oreil.ly/Kubeflow_for_ML. These code examples are available under an Apache 2 license, or as described in the next section.
+There are additional examples under their own respective licenses that you may find useful.
+The Kubeflow project has an example repo, which at the time of writing is available under an Apache 2 license.
+Canonical also has  a set of resources that may be of special interest to MicroK8s users.
+
+Using Code Examples
+If you have a technical question or a problem using the code examples, please send email to bookquestions@oreilly.com.
+This book is here to help you get your job done. In general, if example code is offered with this book, you may use it in your programs and documentation. You do not need to contact us for permission unless you’re reproducing a significant portion of the code. For example, writing a program that uses several chunks of code from this book does not require permission. Selling or distributing examples from O’Reilly books does require permission. Answering a question by citing this book and quoting example code does not require permission. Incorporating a significant amount of example code from this book into your product’s documentation does require 
+permission.
+Additional details on license can be found in the repos.
+We appreciate, but generally do not require, attribution. An attribution usually includes the title, author, publisher, and ISBN. For example: “Kubeflow for Machine Learning by Holden Karau, Trevor Grant, Boris Lublinsky, Richard Liu, and Ilan Filonenko (O’Reilly). Copyright 2021 Holden Karau, Trevor Grant, Boris Lublinsky, Richard Liu, and Ilan Filonenko, 978-1-492-05012-4.”
+If you feel your use of code examples falls outside fair use or the permission given above, feel free to contact us at permissions@oreilly.com.
+
+
+
+O’Reilly Online Learning
+Note
+For more than 40 years, O’Reilly Media has provided technology and business training, knowledge, and insight to help companies succeed.
+
+Our unique network of experts and innovators share their knowledge and expertise through books, articles, and our online learning platform. O’Reilly’s online learning platform gives you on-demand access to live training courses, in-depth learning paths, interactive coding environments, and a vast collection of text and video from O’Reilly and 200+ other publishers. For more information, visit http://oreilly.com.
+
+
+How to Contact the Authors
+For feedback, email us at intro-to-ml-kubeflow@googlegroups.com. For random ramblings, occasionally about Kubeflow, follow us online:
+
+Trevor
+
+
+
+Twitter
+
+
+Blog
+
+
+GitHub
+
+
+Myspace
+
+
+
+Holden
+
+
+
+Twitter
+
+
+YouTube
+
+
+Twitch
+
+
+LinkedIn
+
+
+Blog
+
+
+GitHub
+
+
+Facebook
+
+
+
+Boris
+
+
+
+LinkedIn
+
+
+GitHub
+
+
+
+Richard
+
+
+
+GitHub
+
+
+
+
+
+Ilan
+
+
+
+LinkedIn
+
+
+GitHub
+
+
+
+
+
+
+How to Contact Us
+Please address comments and questions concerning this book to the publisher:
+
+O’Reilly Media, Inc.
+1005 Gravenstein Highway North
+Sebastopol, CA 95472
+800-998-9938 (in the United States or Canada)
+707-829-0515 (international or local)
+707-829-0104 (fax)
+
+You can access the web page for this book, where we list errata, examples, and any additional information, at https://oreil.ly/Kubeflow_for_Machine_Learning.
+Email bookquestions@oreilly.com to comment or ask technical questions about this book.
+For news and information about our books and courses, visit http://oreilly.com.
+Find us on Facebook: http://facebook.com/oreilly
+Follow us on Twitter: http://twitter.com/oreillymedia
+Watch us on YouTube: http://www.youtube.com/oreillymedia
+
+
+Acknowledgments
+The authors would like to thank everyone at O’Reilly Media, especially our editors Amelia Blevins and Deborah Baker, as well as the Kubeflow community for making this book possible.
+Clive Cox and Alejandro Saucedo from Seldon made amazing contributions to CHAPTER 8, without which this book would be missing key parts.
+We’d like to thank Google Cloud Platform for resources that allowed us to ensure examples worked on GCP.
+Perhaps most importantly, we’d like to thank our reviewers, without whom this book would not exist in its current form. This includes Taka Shinagawa, Pete MacKinnon, Kevin Haas, Chris Albon, Hannes Hapke, and more. To all early readers and reviewers of books, thank you for your contributions.
+
+Holden
+
+Would like to thank her girlfriend Kris Nóva for her help debugging her first Kubeflow PR,
+as well as the entire Kubeflow community for being so welcoming.
+She would also like to thank her wife Carolyn DeSimone, her puppy Timbit DeSimone-Karau (pictured in FIGURE P-1), and her stuffed animals for the support needed to write.
+She would like to thank the doctors at SF General and UCSF for fixing up her hands so she could finish writing this book (although she does wish the hands did not hurt anymore) and everyone who came to visit her in the hospital and nursing home.
+A special thank you to Ann Spencer, the first editor who showed her how to have fun writing.
+Finally, she would like to thank her datefriend Els van Vessem for their support in recovering after her accident, especially reading stories and reminding her of her love of writing.
+
+
+
+
+Figure P-1. Timbit the dog
+
+
+Ilan
+
+Would like to thank all his colleagues at Bloomberg who took the time to review, mentor, and encourage him to write and contribute to open source.
+The list includes but is not limited to: Kimberly Stoddard, Dan Sun, Keith Laban, Steven Bower, and Sudarshan Kadambi.
+He would also like to thank his family—Galia, Yuriy, and Stan—for their unconditional love and support.
+
+Richard
+
+Would like to thank the Google Kubeflow team, including but not limited to: Jeremy Lewi, Abhishek Gupta, Thea Lamkin, Zhenghui Wang, Kunming Qu, Gabriel Wen, Michelle Casbon, and Sarah Maddox—without whose support none of this would have been possible. He would also like to thank his cat Tina (see FIGURE P-2) for her support and understanding during COVID-19.
+
+
+
+
+Figure P-2. Tina the cat
+
+
+Boris
+
+Would like to thank his colleagues at Lightbend, especially Karl Wehden, for their support in writing the book,
+their suggestions and proofreads of the early versions of the text, and his wife Marina for putting up with his long hours and feeding him during these hours.
+
+Trevor
+
+Trevor would like to thank his office mates Apache and Meowska (see FIGURE P-3) for reminding him of the importance of naps, and everyone who listened to him give a talk on Kubeflow last year (especially the people who listened to the bad versions, and especially especially people who listened to the bad versions but still are reading this book now—you’re the best). He’d also like to thank his mom, sister, and brother for tolerating his various shenanigans over the years.
+
+
+
+
+Figure P-3. Apache and Meowska
+
+
+
+Grievances
+The authors would also like to acknowledge the struggles of API changes, which made writing this book so frustrating. If you ever struggle with API changes, know that you are not alone; they are annoying to almost everyone.
+Holden would also like to acknowledge the times Timbit DeSimone-Karau was a little sh*t and dug up the yard while she was working. We have a special grievance to vent with the person who hit Holden with their car, slowing down the release of this book.
+Trevor has a grievance to air with his girlfriend, who has been badgering him (with increasing persistence) to propose to her throughout this entire project, and while he has been “working on it”—if he hasn’t asked her to marry him by the time this book comes out: Katie, will you marry me?
+
+[1] Remember the Twitter bot that through reinforcement learning became a neo-Nazi in less than a weekend?
+
+Chapter 1. Kubeflow: What It Is and Who It Is For
+If you are a data scientist trying to get your models into production, or a data engineer trying to make your models scalable and reliable, Kubeflow provides tools to help.
+Kubeflow solves the problem of how to take machine learning from research to production.
+Despite common misconceptions, Kubeflow is more than just Kubernetes and TensorFlow—you can use it for all sorts of machine learning tasks.
+We hope Kubeflow is the right tool for you, as long as your organization is using Kubernetes.
+SECTION 1.6 introduces some options you may wish to explore.
+This chapter aims to help you decide if Kubeflow is the right tool for your use case.
+We’ll cover the benefits you can expect from Kubeflow, some of the costs associated with it, and some of the alternatives.
+After this chapter, we’ll dive into setting up Kubeflow and building an end-to-end solution to familiarize you with the basics.
+
+1.1. Model Development Life Cycle
+Machine learning or model development essentially follows the path: data →  information →  knowledge →  insight. This path of generating insight from data can be graphically described with FIGURE 1-1.
+Model development life cycle (MDLC) is a term commonly used to describe the flow between training and inference. FIGURE 1-1 is a visual representation of this continuous interaction, where upon triggering a model update the whole cycle kicks off yet again.
+
+
+Figure 1-1. Model development life cycle
+
+
+
+1.2. Where Does Kubeflow Fit In?
+Kubeflow is a collection of cloud native tools for all of the stages of MDLC (data exploration, feature preparation, model training/tuning, model serving, model testing, and model versioning).
+Kubeflow also has tooling that allows these traditionally separate tools to work seamlessly together.
+An important part of this tooling is the pipeline system, which allows users to build integrated end-to-end pipelines that connect all components of their MDLC.
+Kubeflow is for both data scientists and data engineers looking to build production-grade machine learning implementations.
+Kubeflow can be run either locally in your development environment or on a production cluster.
+Often pipelines will be developed locally and migrated once the pipelines are ready.
+Kubeflow provides a unified system—leveraging Kubernetes for containerization and scalability, for the portability and repeatability of its pipelines.
+
+
+1.3. Why Containerize?
+The isolation provided by containers allows machine learning stages to be portable and reproducible. Containerized applications are isolated from the rest of your machine and have all their requirements included (from the operating system up).[1]
+Containerization means no more conversations that include “It worked on my machine” or “Oh yeah, we forgot about just one, you need this extra package.”
+Containers are built in composable layers, allowing you to use another container as a base.
+For example, if you have a new natural language processing (NLP) library you want to use, you can add it on top of the existing container—you don’t have to start from scratch each time.
+The composability allows you to reuse a common base; for example, the R and Python containers we use both share a base Debian container.
+A common worry about using containers is the overhead. The overhead of containers depends on your implementation, but a paper from IBM[2] found the overhead to be quite low, and generally faster than virtualization.
+With Kubeflow, there is some additional overhead of having operators installed that you may not use. This overhead is negligible on a production cluster but may be noticeable on a laptop.
+Tip
+Data scientists with Python experience can think of containers as a heavy-duty virtual environment. In addition to what you’re used to in a virtual environment, containers also include the operating system, the packages, and everything in between.
+
+
+
+1.4. Why Kubernetes?
+Kubernetes is an open source system for automating the deployment, scaling, and management of containerized applications. It allows our pipelines to be scalable without sacrificing portability, enabling us to avoid becoming locked into a specific cloud provider.[3]
+In addition to being able to switch from a single machine to a distributed cluster, different stages of your machine learning pipeline can request different amounts or types of resources. For example, your data preparation step may benefit more from running on multiple machines, while your model training may benefit more from computing on top of GPUs or tensor processing units (TPUs).
+This flexibility is especially useful in cloud environments, where you can reduce your costs by using expensive resources only when required.
+You can, of course, build your own containerized machine learning pipelines on Kubernetes without using Kubeflow; however the goal of Kubeflow is to standardize this process and make it substantially easier and more efficient.[4]
+Kubeflow provides a common interface over the tools you would likely use for your machine learning implementations. It also makes it easier to configure your implementations to use hardware accelerators like TPUs without changing your code.
+
+
+1.5. Kubeflow’s Design and Core Components
+In the machine learning landscape, there exists a diverse selection of libraries, tool sets, and frameworks.
+Kubeflow does not seek to reinvent the wheel or provide a “one size fits all” solution—instead, it allows machine learning practitioners to compose and customize their own stacks based on specific needs. It is designed to simplify the process of building and deploying machine learning systems at scale. This allows data scientists to focus their energies on model development instead of infrastructure.
+Kubeflow seeks to tackle the problem of simplifying machine learning through three features: composability, portability, and scalability.
+
+Composability
+
+The core components of Kubeflow come from data science tools that are already familiar to machine learning practitioners. They can be used independently to facilitate specific stages of machine learning, or composed together to form end-to-end pipelines.
+
+Portability
+
+By having a container-based design and taking advantage of Kubernetes and its cloud native architecture, Kubeflow does not require you to anchor to any particular developer environment. You can experiment and prototype on your laptop, and deploy to production effortlessly.
+
+Scalability 
+
+By using Kubernetes, Kubeflow can dynamically scale according to the demand on your cluster, by changing the number and size of the underlying containers and machines.[5]
+
+
+These features are critical for different parts of MDLC.
+Scalability is important as your dataset grows. Portability is important to avoid vendor lock-in. Composability gives you the freedom to mix and match the best tools for the job.
+Let’s take a quick look at some of Kubeflow’s components and how they support these features.
+
+1.5.1. Data Exploration with Notebooks
+MDLC always begins with data exploration—plotting, segmenting, and manipulating your data to understand where possible insight might exist. One powerful tool that provides the tools and environment for such data exploration is Jupyter.
+Jupyter is an open source web application that allows users to create and share data, code snippets, and experiments. Jupyter is popular among machine learning practitioners due to its simplicity and portability.
+In Kubeflow, you can spin up instances of Jupyter that directly interact with your cluster and its other components, as shown in FIGURE 1-2. For example, you can write snippets of TensorFlow distributed training code on your laptop, and bring up a training cluster with just a few clicks.
+
+
+Figure 1-2. Jupyter notebook running in Kubeflow
+
+
+
+

@@ -1,0 +1,492 @@
+﻿Chapter 3. Kubeflow Design: Beyond the Basics
+You made it through two chapters.  Well done.
+So far you have decided to learn Kubeflow and worked through a simple example.
+Now we want to take a step back and look at each component in detail. FIGURE 3-1 shows the main Kubeflow components and the role they play in the overall architecture.
+
+
+Figure 3-1. Kubeflow architecture
+
+Essentially, we’ll look at the core elements that make up our example deployment as well as the supporting pieces.
+In the chapters that follow, we will dig into each of these sections in greater depth.
+That said, let’s get started.
+
+3.1. Getting Around the Central Dashboard
+Your main interface to Kubeflow is the central dashboard (see FIGURE 3-2), which allows you to access the majority of Kubeflow components.
+Depending on your Kubernetes provider, it might take up to half an hour to have your ingress become available.
+
+
+Figure 3-2. The central dashboard
+
+Note
+While it is meant to be automatic, if you don’t have a namespace created for your work, follow Kubeflow’s “Manual profile creation” instructions.
+
+From the home page of the central dashboard you can access Kubeflow’s Pipelines, Notebooks, Katib (hyperparameter tuning), and the artifact store.
+We will cover the design of these components and how to use them next.
+
+3.1.1. Notebooks (JupyterHub)
+The first step of most projects is some form of prototyping and experimentation.
+Kubeflow’s tool for this purpose is JupyterHub—a multiuser hub that spawns, manages, and proxies multiple instances of a single-user Jupyter notebook.
+Jupyter notebooks support the whole computation process: developing, documenting, and executing code, as well as communicating the results.
+To access JupyterHub, go to the main Kubeflow page and click the notebook button. On the notebook page, you can connect to existing servers or create a new one.
+To create a new server, you need to specify the server name and namespace, pick an image (from CPU optimized, GPU optimized, or a custom image that you can create), and specify resource requirements—CPU/memory, workspace, data volumes, custom configuration, and so on.
+Once the server is created, you can connect to it and start creating and editing notebooks.
+In order to allow data scientists to do cluster operations without leaving the notebook’s environment, Kubeflow adds
+kubectl to the provided notebook images, which allows developers to use notebooks to create and manage Kubernetes resources.
+The Jupyter notebook pods run under a special service account default-editor, which has namespace-scoped permissions to the following Kubernetes resources:
+
+
+Pods
+
+
+Deployments
+
+
+Services
+
+
+Jobs
+
+
+TFJobs
+
+
+PyTorchJobs
+
+
+You can bind this account to a custom role, in order to limit/extend permissions of the notebook server.
+This allows notebook developers to execute all of the (allowed by role) Kubernetes commands without leaving the notebook environment. For example, the creation of a new Kubernetes resource can be done by running the following command directly in a Jupyter notebook:
+!kubectl create -f myspec.yaml
+The contents of your yaml file will determine what resource is created. If you’re not used to making Kubernetes resources, don’t worry—Kubeflow’s pipelines include tools to make them for you.
+To further increase Jupyter capabilities, Kubeflow also provides support in the notebooks for such important Kubeflow components as Pipelines and metadata management (described later in SECTION 3.1.6). Jupyter notebooks can also directly launch distributed training jobs.
+
+
+3.1.2. Training Operators
+JupyterHub is a great tool for initial experimentation with the data and prototyping ML jobs. However, when moving to train in production, Kubeflow provides several training components to automate the execution of machine learning algorithms, including:
+
+
+Chainer training
+
+
+MPI training
+
+
+Apache MXNet training
+
+
+PyTorch training
+
+
+TensorFlow training
+
+
+In Kubeflow, distributed training jobs are managed by application-specific controllers, known as operators. These operators extend the Kubernetes APIs to create, manage, and manipulate the state of resources. For example, to run a distributed TensorFlow training job, the user just needs to provide a specification that describes the desired state (number of workers and parameter servers, etc.), and the TensorFlow operator component will take care of the rest and manage the life cycle of the training job.
+These operators allow the automation of important deployment concepts such as scalability, observability, and failover. They can also be used by pipelines to chain their execution with the execution of other components of the system.
+
+
+3.1.3. Kubeflow Pipelines
+In addition to providing specialized parameters implementing specific functionality, Kubeflow has Pipelines, which allows you to orchestrate the execution of machine learning applications.
+This implementation is based on
+Argo Workflows, an open source, container-native workflow engine for Kubernetes. Kubeflow installs all of the Argo components.
+At a high level, the execution of a pipeline contains the following
+components:
+
+Python SDK
+
+You create components or specify a pipeline using the Kubeflow Pipelines  domain-specific language (DSL).
+
+DSL compiler
+
+The DSL compiler transforms your pipeline’s Python code into a static configuration (YAML).
+
+Pipeline Service
+
+The Pipeline Service creates a pipeline run from the static configuration.
+
+Kubernetes resources
+
+The Pipeline Service calls the Kubernetes API server to create the necessary Kubernetes custom resource definitions (CRDs) to run the pipeline.
+
+Orchestration controllers
+
+A set of orchestration controllers execute the containers needed to complete the pipeline execution specified by the Kubernetes resources (CRDs). The containers execute within Kubernetes Pods on virtual machines. An example controller is the Argo Workflow controller, which orchestrates task-driven workflows.
+
+Artifact storage
+
+The Kubernetes Pods store two kinds of data:
+
+Metadata
+
+Experiments, jobs, runs, single scalar metrics (generally aggregated for the purposes of sorting and filtering), etc. Kubeflow Pipelines stores the metadata in a MySQL database.
+
+Artifacts
+
+Pipeline packages, views, large-scale metrics like time series (usually used for investigating an individual run’s performance and for debugging), etc. Kubeflow Pipelines stores the artifacts in an artifact store like
+MinIO server,
+Google Cloud Storage (GCS),
+or Amazon S3.
+
+
+
+
+Kubeflow Pipelines gives you the ability to make your machine learning jobs repeatable and handle new data.
+It provides an intuitive DSL in Python to write your pipelines with. Your pipelines are then compiled down to an existing Kubernetes workflow engine (currently Argo Workflows).
+Kubeflow’s pipeline components make it easy to use and coordinate the different tools required to build an end-to-end machine learning project.
+On top of that, Kubeflow can track both data and metadata, improving how we can understand our jobs. For example, in CHAPTER 5 we use these artifacts to understand the schema.
+Pipelines can expose the parameters of the underlying machine learning algorithms, allowing Kubeflow to perform tuning.
+
+
+3.1.4. Hyperparameter Tuning
+Finding the right set of hyperparameters for your training model can be a challenging task. Traditional methodologies such as grid search can be time-consuming and quite tedious. Most existing hyperparameter systems are tied to one machine learning framework and have only a few options for searching the parameter space.
+Kubeflow provides a component (called Katib) that allows users to perform hyperparameter optimizations easily on Kubernetes clusters. Katib is inspired by Google Vizier, a black-box optimization framework. It leverages advanced searching algorithms such as Bayesian optimization to find optimal hyperparameter configurations.
+Katib supports
+hyperparameter tuning and can run with any deep learning framework, including TensorFlow, MXNet, and PyTorch.
+As in Google Vizier, Katib is based on four main concepts:
+
+Experiment
+
+A single optimization run over a feasible space. Each experiment contains a configuration describing the feasible space, as well as a set of trials. It is assumed that objective function f(x) does not change in the course of the experiment.
+
+Trial
+
+A list of parameter values, x, that will lead to a single evaluation of f(x). A trial can be “completed,” which means that it has been evaluated and the objective value f(x) has been assigned to it, otherwise it is “pending.” One trial corresponds to one job.
+
+Job
+
+A process responsible for evaluating a pending trial and calculating its objective value.
+
+Suggestion
+
+An algorithm to construct a parameter set. Currently, Katib supports the following exploration algorithms:
+
+
+Random
+
+
+Grid
+
+
+Hyperband
+
+
+Bayesian optimization
+
+
+
+
+Using these core concepts, you can increase your model’s performance. Since Katib is not tied to one machine learning library, you can explore new algorithms and tools with minimal modifications.
+
+
+3.1.5. Model Inference
+Kubeflow makes it easy to deploy machine learning models in production environments at scale. It provides several model serving options, including TFServing, Seldon serving, PyTorch serving, and TensorRT. It also provides an umbrella implementation, KFServing, which generalizes the model inference concerns of autoscaling, networking, health checking, and server 
+configuration.
+The overall implementation is based on leveraging Istio (covered later) and Knative serving—serverless containers on Kubernetes. As defined in the Knative documentation, the Knative serving project provides middleware primitives that enable:
+
+
+Rapid deployment of serverless containers
+
+
+Automatic scaling up and down to zero
+
+
+Routing and network programming for Istio components
+
+
+Since model serving is inherently spiky, rapid scaling up and down is important.
+Knative serving simplifies the support for continuous model updates, by automatically routing requests to newer model deployments. This requires scaling down to zero (minimizing resource utilization) for unused models while keeping them available for rollbacks. Since Knative is cloud native it benefits from its underlying infrastructure stack and therefore provides all the monitoring capabilities that exist within Kubernetes, such as logging, tracing, and monitoring. KFServing also makes use of Knative eventing to give optional support for pluggable event sources.
+Similar to Seldon, every KFServing deployment is an orchestrator, wiring together the following components:
+
+Preprocessor
+
+An optional component responsible for the transformation of the input data into content/format required for model serving
+
+Predictor
+
+A mandatory component responsible for an actual model serving
+
+Postprocessor
+
+An optional component responsible for the transformation/enriching of the model serving result into content/format required for output
+
+
+Additional components can enhance one’s overall model serving implementation, but are outside of the main execution pipeline. Tools like outlier detection and model explainability can run in this environment without slowing down the overall system.
+While all of these individual components and techniques have existed for a long time, having them integrated into the serving system of Kubeflow reduces the complexity involved in bringing new models into production.
+In addition to the components directly supporting ML operations, Kubeflow also provides several supporting components.
+
+
+3.1.6. Metadata
+An important component of Kubeflow is metadata management, providing capabilities to capture and track information about a model’s creation. Many organizations build hundreds of models a day, but it’s very hard to manage all of a model’s related information. ML Metadata is both the infrastructure and a library for recording and retrieving metadata associated with an ML developer’s and data scientist’s workflow.
+The information, which can be registered in the metadata component includes:
+
+
+Data sources used for the model’s creation
+
+
+The artifacts generated through the components/steps of the pipeline
+
+
+The executions of these components/steps
+
+
+The pipeline and associated lineage information
+
+
+ML Metadata tracks the inputs and outputs of all components and steps in an ML workflow and their lineage. This data powers several important features listed in TABLE 3-1 and shown in FIGURE 3-3.
+
+Table 3-1. Examples of ML Metadata operations
+
+
+Operation
+Example
+
+
+
+
+List all artifacts of a specific type.
+All models that have been trained.
+
+
+Compare two artifacts of the same type.
+Compare results from two experiments.
+
+
+Show a DAG of all related executions and their input and output artifacts.
+Visualize the workflow of an experiment for debugging and discovery.
+
+
+Display how an artifact was created.
+See what data went into a model; enforce data retention plans.
+
+
+Identify all artifacts that were created using a given artifact.
+Mark all models trained from a specific dataset with bad data.
+
+
+Determine if an execution has been run on the same inputs before.
+Determine whether a component/step has already completed the same work and the previous output can just be reused.
+
+
+Record and query context of workflow runs.
+Track the owner and changes used for a workflow run; group the lineage by experiments; manage artifacts by projects.
+
+
+
+
+
+Figure 3-3. Metadata diagram
+
+
+
+3.1.7. Component Summary
+The magic of Kubeflow is making all of these traditionally distinct components work together.
+While Kubeflow is certainly not the only system to bring together different parts of the machine learning landscape, it is unique in its flexibility in supporting a wide range of components. In addition to that, since it runs on standard Kubernetes, you can add your own components as desired.
+Much of this magic of tool integration happens inside of Kubeflow’s pipelines, but some of the support components are essential to allowing these tools to interact.
+
+
+
+3.2. Support Components
+While these components aren’t explicitly exposed by Kubeflow, they play an important role in the overall Kubeflow ecosystem. Let’s briefly discuss each of them. We also encourage you to research them more on your own.
+
+3.2.1. MinIO
+The foundation of the pipeline architecture is shared storage. A common practice today is to keep data in external storage. Different cloud providers have different solutions, like Amazon S3, Azure Data Storage, Google Cloud Storage, etc. The variety of solutions makes it complex to port solutions from one cloud provider to another.
+To minimize this dependency, Kubeflow ships with MinIO, a high-performance distributed object storage server, designed for large-scale private cloud infrastructure. Not just for private clouds, MinIO can also act as a consistent gateway to public APIs.
+MinIO can be deployed in several different configurations. The default with Kubeflow is as a single container mode when MinIO runs using the Kubernetes built-in persistent storage on one container.
+Distributed MinIO lets you pool multiple volumes into a single object storage service.[1] It can also withstand multiple node failures and yet ensure full data protection (the number of failures depends on your replication configuration). MinIO Gateway provides S3 APIs on top of Azure Blob storage, Google Cloud storage, Gluster, or NAS storage. The gateway option is the most flexible, and allows you to create cloud independent implementation without scale limits.
+While Kubeflow’s default MinIO setup works, you will likely want to configure it further. Kubeflow installs both the MinIO server and UI. You can get access to the MinIO UI and explore what is stored, as seen in FIGURE 3-4, by using port-forwarding, as in EXAMPLE 3-1, or exposing an ingress. You can log in using Kubeflow’s default minio/minio123 user.
+
+Example 3-1. Setting up port-forwarding
+kubectl port-forward -n kubeflow svc/minio-service 9000:9000 &
+
+
+Figure 3-4. MinIO dashboard
+
+In addition, you can also install the MinIO CLI (mc) to access your MinIO installation using commands from your workstation. For macOS, use Homebrew, as in EXAMPLE 3-2. For Linux Ubuntu, use snap, as in EXAMPLE 3-3.
+
+Example 3-2. Install MinIO on Mac
+brew install minio/stable/minio
+
+Example 3-3. Install MinIO on Linux
+pushd ~/bin
+wget https://dl.min.io/client/mc/release/linux-amd64/mc
+chmod a+x mc
+You need to configure MinIO to talk to the correct endpoint, as in EXAMPLE 3-4.
+
+Example 3-4. Configure MinIO client to talk to Kubeflow’s MinIO
+mc config host add minio http://localhost:9000 minio minio123
+Once you’ve configured the command line you can make new buckets, as in EXAMPLE 3-5, or change your setup.
+
+Example 3-5. Create a bucket with MinIO
+mc mb minio/kf-book-examples
+MinIO exposes both native and S3-compatible APIs. The S3-compatible APIs are most important since most of our software can talk to S3, like TensorFlow and Spark.
+Warning
+Using MinIO with systems built on top of Hadoop (mostly Java-based) requires Hadoop 2.8 or higher.
+
+Kubeflow installation hardcodes MinIO credentials—minio/minio123, which you can use directly in your applications—but it’s generally a better practice to use a secret, especially if you might switch to regular S3.
+Kubernetes secrets provide you with a way to store credentials on the cluster separate from your application.[2] To set one up for MinIO or S3, create a secret file like in EXAMPLE 3-6. In Kubernetes secret values for the ID and key have to be base64 encoded. To encode a value, run the command echo -n xxx | base64.
+
+Example 3-6. Sample MinIO secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minioaccess
+  namespace: mynamespace
+data:
+  AWS_ACCESS_KEY_ID: xxxxxxxxxx
+  AWS_SECRET_ACCESS_KEY: xxxxxxxxxxxxxxxxxxxxx
+Save this YAML to the file minioaccess.yaml, and deploy the secret using the command kubectl apply -f minioaccess.yaml. Now that we understand data communication between pipeline stages, let’s work to understand network communication between components.
+
+
+3.2.2. Istio
+Another supporting component of Kubeflow is Istio—a service mesh providing such vital features as service discovery, load balancing, failure recovery, metrics, monitoring, rate limiting, access control, and end-to-end authentication. Istio, as a service mesh, layers transparently onto a Kubernetes cluster. It integrates into any logging platform, or telemetry or policy system and promotes a uniform way to secure, connect, and monitor microservices. Istio implementation co-locates each service instance with a sidecar network proxy. All network traffic (HTTP, REST, gRPC, etc.) from an individual service instance flows via its local sidecar proxy to the appropriate destination. Thus, the service instance is not aware of the network at large and only knows about its local proxy. In effect, the distributed system network has been abstracted away from the service programmer.
+Istio implementation is logically split into a data plane and control plane. The data plane is composed of a set of intelligent proxies. These proxies mediate and control all network communication between pods. The control plane manages and configures the proxies to route traffic.
+The main components of Istio are:
+
+Envoy
+
+Istio data plane is based on Envoy proxy, which provides features like failure handling (for example, health checks and bounded retries), dynamic service discovery, and load balancing. Envoy has many built-in features, including:
+
+
+Dynamic service discovery
+
+
+Load balancing
+
+
+TLS termination
+
+
+HTTP/2 and gRPC proxies
+
+
+Circuit breakers
+
+
+Health checks
+
+
+Staged rollouts with percent-based traffic splitting
+
+
+Fault injection
+
+
+Rich metrics
+
+
+
+Mixer
+
+Mixer enforces access control and usage policies across the service mesh, and collects telemetry data from the Envoy proxy and other services. The proxy extracts request-level attributes, and sends them to Mixer for evaluation.
+
+Pilot
+
+Pilot provides service discovery for the Envoy sidecars and traffic management capabilities for intelligent routing (e.g., A/B tests, canary rollouts) and resiliency (timeouts, retries, circuit breakers, etc.). This is done by converting high-level routing rules that control traffic behavior into Envoy-specific configurations, and propagating them to the sidecars at runtime. Pilot abstracts platform-specific service discovery mechanisms and synthesizes them into a standard format that any sidecar conforming with the Envoy data plane APIs can consume.
+
+Galley
+
+Galley is Istio’s configuration validation, ingestion, processing, and distribution component. It is responsible for insulating the rest of the Istio components from the details of obtaining user configuration from the underlying platform.
+
+Citadel
+
+Citadel enables strong service-to-service and end-user authentication by providing identity and credential management. It allows for upgrading unencrypted traffic in the service mesh. Using Citadel, operators can enforce policies based on service identity rather than on relatively unstable layer 3 or layer 4 network 
+identifiers.
+
+
+Istio’s overall architecture is illustrated in FIGURE 3-5.
+
+
+Figure 3-5. Istio architecture
+
+Kubeflow uses Istio to provide a proxy to the Kubeflow UI and to route requests appropriately and securely.
+Kubeflow’s KFServing leverages Knative, which requires a service mesh, like Istio.
+
+
+3.2.3. Knative
+Another unseen support component used by Kubeflow is Knative. We will begin by describing the most important part: Knative Serving. Built on Kubernetes and Istio, Knative Serving supports the deploying and serving of serverless applications. The Knative Serving project provides middleware primitives that enable:
+
+
+Rapid deployment of serverless containers
+
+
+Automatic scaling up and down to zero
+
+
+Routing and network programming for Istio components
+
+
+Point-in-time snapshots of deployed code and configurations
+
+
+Knative Serving is implemented as a set of Kubernetes CRDs. These objects are used to define and control behavior of a serverless workload:
+
+Service
+
+The service.serving.knative.dev resource manages the workload as a whole. It orchestrates the creation and execution of other objects to ensure that an app has a configuration, a route, and a new revision for each update of the service. Service can be defined to always route traffic to the latest revision or to a specified revision.
+
+Route
+
+The route.serving.knative.dev resource maps a network endpoint to one or more revisions. This allows for multiple traffic management approaches, including fractional traffic and named routes.
+
+Configuration
+
+The configuration.serving.knative.dev resource maintains the desired state for deployment. It provides a clean separation between code and configuration and follows the Twelve-Factor App methodology. Modifying a configuration creates a new revision.
+
+Revision
+
+The revision.serving.knative.dev resource is a point-in-time snapshot of the code and configuration for each modification made to the workload. Revisions are immutable objects and can be retained for as long as is useful. Knative Serving Revisions can be automatically scaled up and down according to incoming traffic.
+
+
+Knative’s overall architecture is illustrated in FIGURE 3-6.
+
+
+Figure 3-6. Knative architecture
+
+
+
+3.2.4. Apache Spark
+A more visible supporting component in Kubeflow is Apache Spark. Starting in Kubeflow 1.0, Kubeflow has a built-in Spark operator for running Spark jobs. In addition to the Spark operator, Kubeflow provides integration for using Google’s Dataproc and Amazon’s Elastic Map Reduce (EMR), two managed cloud services for running Spark. The components and the operator are focused on production use and are not well suited to exploration. For exploration, you can use Spark inside of your Jupyter notebook.
+Apache Spark allows you to handle larger datasets and scale problems that cannot fit on a single machine. While Spark does have its own machine learning libraries, it is more commonly used as part of a machine learning pipeline for data or feature preparation. We cover Spark in more detail in CHAPTER 5.
+
+
+3.2.5. Kubeflow Multiuser Isolation
+The latest version of Kubeflow introduced multiuser isolation, which allows sharing the same pool of resources across different teams and users. Multiuser isolation provides users with a reliable way to isolate and protect their own resources, without accidentally viewing or changing each other’s resources. The key concepts of such isolation are:
+
+Administrator
+
+An administrator is someone who creates and maintains the Kubeflow cluster. This person has permission to grant access permissions to others.
+
+User
+
+A user is someone who has access to some set of resources in the cluster. A user needs to be granted access permissions by the administrator.
+
+Profile
+
+A profile is a grouping of all Kubernetes namespaces and resources owned by a user.
+
+
+As of version 1.0, Kubeflow’s Jupyter notebook service is the first application to be fully integrated with multiuser isolation. Notebooks and their creation are controlled by the profile access policies set by the administrator or the owners of the profiles. Resources created by the notebooks (e.g., training jobs and deployments) will also inherit the same access.
+By default, Kubeflow provides automatic profile creation for authenticated users on first login,[3] which creates a new namespace. Alternatively, profiles for users can be created manually. This means that every user can work independently in their own namespace and use their own Jupyter server and notebooks. To share access to your server/notebooks with others, go to the manage contributors page and add your collaborators’ emails.
+
+Kubeflow’s Repositories
+As you’ve seen, Kubeflow is comprised of a number of different components. These components are hosted under the Kubeflow GitHub organization.
+The most important repositories to be familiar with are kfctl, which is hosted in the kfctl repo, and Kubeflow Pipelines, in the pipelines repo. The pipelines repo is especially important as its prebuilt components can save you time.
+Using the other components does not require explicit installation, but looking at the components issues, like in Katib, can be useful to check for known workarounds for any problems you encounter.
+
+
+
+
+3.3. Conclusion
+You now know the different components of Kubeflow and how they fit together.
+Kubeflow’s central dashboard gives you access to its web components.
+You’ve seen that JupyterHub facilitates the explorative phase of model development.
+We’ve covered the different built-in training operators for Kubeflow.
+We revisited Kubeflow pipelines to discuss how they tie together all of Kubeflow’s other components.
+We introduced Katib, Kubeflow’s tool for hyperparameter tuning that works on pipelines.
+We talked about the different options for serving your models with Kubeflow (including KF Serving and Seldon).
+We discussed Kubeflow’s system for tracking your machine learning metadata and artifacts.
+Then we wrapped it up with some of Kubeflow’s supporting components that enable the rest, Knative and Istio.
+By understanding the different parts of Kubeflow, as well as the overall design, you should now be able to start seeing how your machine learning tasks and workflow translate to 
+Kubeflow.
+The next few chapters will help you gain insights into these components and how to apply them to your use cases.
+
+[1] This can run on multiple servers while exposing a consistent endpoint.[2] Storing credentials inside your application can lead to security breaches.[3] To enable users to log in, they should be given minimal permission scope that allows them to connect to the Kubernetes cluster. For example, for GCP users, they can be granted IAM roles: Kubernetes Engine Cluster Viewer and IAP-secured Web App User.
+

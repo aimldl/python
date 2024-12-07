@@ -1,0 +1,62 @@
+        debug = True
+        if debug:
+            df_text['review'].to_csv('../output/df_text_review.csv')
+            df_text['review'].drop_duplicates().to_csv('../output/df_text_review_unique.csv')
+        
+        unique_documents = df_text['review'].drop_duplicates()
+        # The first row is 'review', so let's remove it.
+        unique_documents.drop('0',axis=0)
+
+#        unique_documents = df_text['review'].unique().tolist()
+#        # The first element is 'review', so let's remove it.
+#        #   unique_documents[0]
+#        #   'review'
+#        unique_documents.remove('review')
+
+        indexed_documents_list  = []
+        filtered_tokens         = []
+        filtered_documents_list = []
+        
+        for document in unique_documents:
+            tokens = self.nlp.tokenize( document )
+            print( tokens )
+            
+        	# indexs = [ int( token2index_dict[ token ] ) for token in tokens ]
+        	#   is more compact, but I'm expecting KeyError will occur intentionally.
+
+            # A valid vocabulary 'nan' causes "KeyError: 'nan'"
+            #   because it's recognized as NaN (Not a number).
+            # As a quick fix, the vocabulary 'nan' is removed
+            #   because it has only two counts.
+            # TODO: This is a quick fix. Watch out for this in the later part.
+            
+            indexs = []
+            for token in tokens:
+                # KeyError: 'aap'
+                # If token doesn't exist in the dictionary, it's [unk]
+                # vocabulary with low frequency is removed from the vocabulary dictionary. 
+            	if pd.isnull( token ):
+                    index = 0
+                    filtered_tokens.append( '[unk]' )
+            	else:
+                    index = int( token2index_dict[ token ] )
+                    filtered_tokens.append( token )
+                
+            	indexs.append( index )
+
+            # re-create documents from the filtered tokens
+            filtered_documents_list = ' '.join( filtered_tokens )
+            indexed_documents_list.append( indexs )
+            
+            # Make sure each index is an integer with int( . )
+            #   which may not be neccessary, but just in case!
+            if verbose:
+                print( document )
+                print( indexs )
+            
+        if verbose:
+            print( indexed_documents_list )
+        
+        df_filtered_documents = pd.DataFrame( filtered_documents_list )
+        df_filtered_documents.to_csv('../output/filtered_documents_df.csv')
+

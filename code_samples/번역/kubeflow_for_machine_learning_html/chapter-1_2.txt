@@ -1,0 +1,169 @@
+﻿1.5.2. Data/Feature Preparation
+Machine learning algorithms require good data to be effective, and often special tools are needed to effectively extract, transform, and load data. One typically filters, normalizes, and prepares one’s input data in order to extract insightful features from otherwise unstructured, noisy data. Kubeflow supports a few different tools for this:
+
+
+Apache Spark (one of the most popular big data tools)
+
+
+TensorFlow Transform (integrated with TensorFlow Serving for easier inference)
+
+
+These distinct data preparation components can handle a variety of formats and data sizes and are designed to play nicely with your data exploration environment.[6]
+Note
+Support for Apache Beam with Apache Flink in Kubeflow Pipelines is an area of active development.
+
+
+
+1.5.3. Training
+Once your features are prepped, you are ready to build and train your model.
+Kubeflow supports a variety of distributed training frameworks. As of the time of writing, Kubeflow has support for:
+
+
+TensorFlow
+
+
+PyTorch
+
+
+Apache MXNet
+
+
+XGBoost
+
+
+Chainer
+
+
+Caffe2
+
+
+Message passing interface (MPI)
+
+
+In CHAPTER 7 we will examine how Kubeflow trains a TensorFlow model in greater detail and CHAPTER 9 will explore other options.
+
+
+1.5.4. Hyperparameter Tuning
+How do you optimize your model architecture and training? In machine learning, hyperparameters are variables that govern the training process. For example, what should the model’s learning rate be? How many hidden layers and neurons should be in the neural network? These parameters are not part of the training data, but they can have a significant effect on the performance of the training models.
+With Kubeflow, users can begin with a training model that they are unsure about, define the hyperparameter search space, and Kubeflow will take care of the rest—spin up training jobs using different hyperparameters, collect the metrics, and save the results to a model database so their performance can be compared.
+
+
+1.5.5. Model Validation
+Before you put your model into production, it’s important to know how it’s likely to perform.
+The same tool used for hyperparameter tuning can perform cross-validation for model validation.
+When you’re updating existing models, techniques like A/B testing and multi-armed bandit can be used in model inference to validate your model online.
+
+
+1.5.6. Inference/Prediction
+After training your model, the next step is to serve the model in your cluster so it can handle prediction requests.
+Kubeflow makes it easy for data scientists to deploy machine learning models in production environments at scale.
+Currently Kubeflow provides a multiframework component for model serving (KFServing), in addition to existing solutions like TensorFlow Serving and Seldon Core.
+Serving many types of models on Kubeflow is fairly straightforward. In most situations, there is no need to build or customize a container yourself—simply point Kubeflow to where your model is stored, and a server will be ready to service requests.
+Once the model is served, it needs to be monitored for performance and possibly updated. This monitoring and updating is possible via the cloud native design of Kubeflow and will be further expanded upon in CHAPTER 8.
+
+
+1.5.7. Pipelines
+Now that we have completed all aspects of MDLC, we wish to enable reusability and governance of these experiments. To do this, Kubeflow treats MDLC as a machine learning pipeline and implements it as a graph, where each node is a stage in a workflow, as seen in FIGURE 1-3. Kubeflow Pipelines is a component that allows users to compose reusable workflows at ease. Its features include:
+
+
+An orchestration engine for multistep workflows
+
+
+An SDK to interact with pipeline components
+
+
+A user interface that allows users to visualize and track experiments, and to share results with collaborators
+
+
+
+
+Figure 1-3. A Kubeflow pipeline
+
+
+
+1.5.8. Component Overview
+As you can see, Kubeflow has built-in components for all parts of MDLC: data preparation, feature preparation, model training, data exploration, hyperparameter tuning, and model inference, as well as pipelines to coordinate everything. However, you are not limited to just the components shipped as part of Kubeflow. You can build on top of the components or even replace them. This can be OK for occasional components, but if you find yourself wanting to replace many parts of Kubeflow, you may want to explore some of the alternatives available.
+
+
+
+1.6. Alternatives to Kubeflow
+Within the research community, various alternatives exist that provide uniquely different functionality to that of Kubeflow.
+Most recent research has focused around model development and training, with large improvements being made in infrastructure, theory, and systems.
+Prediction and model serving, on the other hand, have received relatively less attention. As such, data science practitioners often end up hacking together an amalgam of critical systems components that are integrated to support serving and inference across various workloads and continuously evolving frameworks.
+Given the demand for constant availability and horizontal scalability, solutions like Kubeflow and various others are gaining traction throughout the industry, as powerful architectural abstraction tools, and as convincing research scopes.
+
+1.6.1. Clipper (RiseLabs)
+One interesting alternative to Kubeflow is Clipper, a general-purpose low-latency prediction serving system developed by
+RiseLabs. In an attempt to simplify deployment, optimization, and inference, Clipper has a layered architecture system. Through various optimizations and its modular design, Clipper, achieves low latency and high-throughput predictions at levels comparable to TensorFlow Serving, on three TensorFlow models of varying inference costs.
+Clipper is divided across two abstractions, aptly named model selection and model abstraction layers. The model selection layer is quite sophisticated in that it uses an adaptive online model selection policy and various ensemble techniques. Since the model is continuously learning from feedback throughout the lifetime of the application, the model selection layer self-calibrates failed models without needing to interact directly with the policy layer.
+Clipper’s modular architecture and focus on containerization, similar to Kubeflow, enables caching and batching mechanisms to be shared across frameworks while also reaping the benefits of scalability, concurrency, and flexibility in adding new model frameworks.
+Graduating from theory into a functional end-to-end system, Clipper has gained traction within the scientific community and has had various parts of its architectural designs incorporated into recently introduced machine learning systems. Nonetheless, we have yet to see if it will be adopted in the industry at scale.
+
+
+1.6.2. MLflow (Databricks)
+MLflow was developed by Databricks as an open source machine learning development platform.
+The architecture of MLflow leverages a lot of the same architectural paradigms as Clipper, including its framework-agnostic nature, while focusing on three major components that it calls Tracking, Projects, and Models.
+MLflow Tracking functions as an API with a complementing UI for logging parameters, code versions, metrics, and output files. This is quite powerful in machine learning as tracking parameters, metrics, and artifacts is of paramount importance.
+MLflow Projects provides a standard format for packaging reusable data science code, defined by a YAML file that can leverage source-controlled code and dependency management via Anaconda. The project format makes it easy to share reproducible data science code, as reproducibility is critical for machine learning practitioners.
+MLflow Models are a convention for packaging machine learning models in multiple formats.
+Each MLflow Model is saved as a directory containing arbitrary files and an MLmodel descriptor file. MLflow also provides the model’s registry, showing lineage between deployed models and their creation metadata.
+Like Kubeflow, MLflow is still in active development, and has an active community.
+
+
+1.6.3. Others
+Because of the challenges presented in machine learning development, many organizations have started to build internal platforms to manage their machine learning life cycle. For example: Bloomberg, Facebook, Google, Uber, and IBM have built, respectively, the Data Science Platform, FBLearner Flow, TensorFlow Extended, Michelangelo, and Watson Studio to manage data preparation, model training, and deployment.[7]
+With the machine learning infrastructure landscape always evolving and maturing, we are excited to see how open source projects, like Kubeflow, will bring much-needed simplicity and abstraction to machine learning development.
+
+
+
+1.7. Introducing Our Case Studies
+Machine learning can use many different types of data, and the approaches and tools you use may vary. In order to showcase Kubeflow’s capabilities, we’ve chosen case studies with very different data and best practices.
+When possible, we will use data from these case studies to explore Kubeflow and some of its components.
+
+1.7.1. Modified National Institute of Standards and Technology
+In ML, Modified National Institute of Standards and Technology (MNIST) commonly refers to the dataset of handwritten digits for classification. The relatively small data size of digits, as well as its common use as an example, allows us to explore a variety of tools.
+In some ways, MNIST has become one of the standard “hello world” examples for machine learning. We use MNIST as our first example in CHAPTER 2 to illustrate Kubeflow end-to-end.
+
+
+1.7.2. Mailing List Data
+Knowing how to ask good questions is something of an art. Have you ever posted a message to a mailing list, asking for help, only for no one to respond? What are the different types of questions?
+We’ll look at some of the public Apache Software Foundation mailing list data and try to create a model that predicts if a message will be answered. This example is scaled up and down by choosing which projects and what time period we want to look at, so we can use a variety of tools to solve it.
+
+
+1.7.3. Product Recommender
+Recommendation systems are one of the most common and easily understood applications of machine learning, with many examples from Amazon’s product recommender to Netflix’s movie suggestions. The majority of recommender implementations are based on collaborative filtering—an assumption that if person A has the same opinion as person B on a set of issues, A would be more likely to share B’s opinion on other issues than would a randomly chosen third person. This approach is built on a well-developed algorithm with quite a few implementations, including TensorFlow/Keras implementation.[8]
+One of the problems with rating-based models is that they can’t be standardized easily for data with nonscaled target values, such as the purchase or frequency data. This excellent Medium post shows how to convert such data into a rating matrix that can be used for collaborative filtering. Our example leverages data and code from Data Driven Investor and code described on Piyushdharkar’s GitHub.
+We’ll use this example to explore how to build an initial model in Jupyter and move on to building a production 
+pipeline.
+
+
+1.7.4. CT Scans
+As we were writing this book, the world was going through the COVID-19 pandemic. AI researchers were being called on to
+apply methods and techniques to assist medical providers with understanding the disease. Some research
+showed that CT scans were more effective at early detection than RT-PCR tests (the traditional COVID test). However, diagnostic
+CT scans use low dosages of radiation and are therefore “noisy”—that is to say, CT scans are more clear when more radiation
+is used.
+A new paper proposes an open source solution for denoising CT scans with off-the-shelf methods available entirely from open
+source projects (as opposed to proprietary FDA-approved solutions). We implement this approach to illustrate how one might
+go from academic article to real-world solution, to show the value of Kubeflow for creating reproducible and sharable
+research, and to provide a starting off point for any reader who might want to contribute to the fight against COVID-19.
+
+
+
+1.8. Conclusion
+We are so glad you’ve decided to use this book to start your adventures into Kubeflow.
+This introduction should have given you a feel for Kubeflow and its capabilities.
+However, like all adventures, there may come a point when your guidebook isn’t enough to carry you through.
+Thankfully, there is a collection of community resources where you can interact with others on similar paths.
+We encourage you to sign up for the Kubeflow Slack workspace, one
+of the more active areas of discussion.
+There is also a Kubeflow discussion mailing list.
+There is a Kubeflow project page as well.
+Tip
+If you want to quickly explore Kubeflow end-to-end, there are some
+Google codelabs that can help you.
+
+In CHAPTER 2, we’ll install Kubeflow and use it to train and serve a relatively simple machine learning
+model to give you an idea of the basics.
+
+[1] For more on containers, see this Google cloud resource. In situations with GPUs or TPUs, the details of isolation become more complicated.[2] W. Felter et al., “An Updated Performance Comparison of Virtual Machines and Linux Containers,” 2015 IEEE International Symposium on Performance Analysis of Systems and Software (ISPASS), March 29-31, 2015, doi: 10.1109/ISPASS.2015.7095802.[3] Kubernetes does this by providing a container orchestration layer. For more information about Kubernetes, check out its documentation.[4] Spotify was able to increase the rate of experiments ~7x; see this  Spotify Engineering blog post.[5] Local clusters like Minikube are limited to one machine, but most cloud clusters can dynamically change the kind and number of machines as needed.[6] There is still some setup work to make this function, which we cover in CHAPTER 5.[7] If you want to explore more of these tools, two good overviews are  Ian Hellstrom’s 2020 blog post and this 2019 article by Austin Kodra.[8] For example, see the Piyushdharkar’s GitHub.
