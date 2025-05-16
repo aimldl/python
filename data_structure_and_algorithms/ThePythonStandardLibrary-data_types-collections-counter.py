@@ -8,7 +8,7 @@ https://docs.python.org/3.7/library/collections.html#module-collections
 ## Containers
 
 ### Python's general purpose built-in containers
-  * dict
+  * dict                                                                                                                                                                                                                                                                          
   * list
   * set
   * tuple
